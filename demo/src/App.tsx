@@ -1,4 +1,4 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   Accordion,
   Button,
@@ -31,6 +31,16 @@ type Member = {
   status: string;
 };
 
+type WorkspaceSnapshot = {
+  members: Member[];
+  direction: Direction;
+  theme: Theme;
+  notifications: boolean;
+  checkIn: string | null;
+};
+
+const STORAGE_KEY = "namaa-demo-workspace-v1";
+
 const initialMembers: Member[] = [
   { id: 1, name: "Amina Hassan", email: "amina@example.com", role: "Designer", status: "Active" },
   { id: 2, name: "Omar Khalil", email: "omar@example.com", role: "Developer", status: "Active" },
@@ -38,6 +48,64 @@ const initialMembers: Member[] = [
   { id: 4, name: "Youssef Nasser", email: "youssef@example.com", role: "Developer", status: "Invited" },
   { id: 5, name: "Sara Haddad", email: "sara@example.com", role: "Designer", status: "Active" },
 ];
+
+const defaultWorkspace: WorkspaceSnapshot = {
+  members: initialMembers,
+  direction: "ltr",
+  theme: "light",
+  notifications: true,
+  checkIn: null,
+};
+
+function isMember(value: unknown): value is Member {
+  if (typeof value !== "object" || value === null) return false;
+  const member = value as Record<string, unknown>;
+  return (
+    typeof member.id === "number" &&
+    typeof member.name === "string" &&
+    typeof member.email === "string" &&
+    typeof member.role === "string" &&
+    typeof member.status === "string" &&
+    ["Designer", "Developer", "Product manager"].includes(member.role) &&
+    ["Active", "Invited"].includes(member.status)
+  );
+}
+
+function readWorkspace(): { value: WorkspaceSnapshot; failed: boolean } {
+  try {
+    const serialized = window.localStorage.getItem(STORAGE_KEY);
+    if (!serialized) return { value: defaultWorkspace, failed: false };
+
+    const parsed: unknown = JSON.parse(serialized);
+    if (typeof parsed !== "object" || parsed === null) throw new Error("Saved workspace is invalid.");
+    const saved = parsed as Record<string, unknown>;
+    if (
+      !Array.isArray(saved.members) ||
+      !saved.members.every(isMember) ||
+      (saved.direction !== "ltr" && saved.direction !== "rtl") ||
+      (saved.theme !== "light" && saved.theme !== "dark") ||
+      typeof saved.notifications !== "boolean" ||
+      (saved.checkIn !== null &&
+        (typeof saved.checkIn !== "string" || Number.isNaN(Date.parse(saved.checkIn))))
+    ) {
+      throw new Error("Saved workspace is invalid.");
+    }
+
+    return {
+      value: {
+        members: saved.members,
+        direction: saved.direction,
+        theme: saved.theme,
+        notifications: saved.notifications,
+        checkIn: saved.checkIn,
+      },
+      failed: false,
+    };
+  } catch (error) {
+    console.error("Could not load the saved Namaa workspace.", error);
+    return { value: defaultWorkspace, failed: true };
+  }
+}
 
 const copy = {
   en: {
@@ -57,13 +125,23 @@ const copy = {
     name: "Name",
     role: "Role",
     status: "Status",
+    actions: "Actions",
     active: "Active",
     invited: "Invited",
-    designers: "Designers",
-    projects: "Projects",
-    completion: "Weekly focus",
-    thisWeek: "THIS WEEK",
-    completionCopy: "Your team is finding its rhythm.",
+    allRoles: "All roles",
+    edit: "Edit",
+    remove: "Remove",
+    updateMember: "Save changes",
+    cancel: "Cancel",
+    deleteTitle: "Remove teammate?",
+    deleteCopy: "This will remove {name} from this sample workspace on this device.",
+    deleteConfirm: "Remove teammate",
+    memberUpdated: "Teammate details updated.",
+    memberRemoved: "Teammate removed.",
+    duplicateEmail: "This email is already in your team.",
+    completion: "Team availability",
+    thisWeek: "YOUR TEAM",
+    completionCopy: "Based on each teammate’s current status.",
     quickTitle: "A calmer way to work",
     quickCopy: "This sample workspace is made from accessible building blocks. Try the controls and make it your own.",
     explore: "Explore the components",
@@ -103,17 +181,22 @@ const copy = {
     tipThree: "Switch language or theme in the top-right corner.",
     mobileMenu: "Open navigation",
     statsPeople: "People",
-    statsActive: "Active this week",
-    statsProjects: "Shared projects",
-    statsTime: "Time saved",
-    monthlyChange: "this month",
-    weeklyChange: "vs last week",
-    teamCount: "Across 3 teams",
-    collaborationTime: "By working together",
+    statsActive: "Active members",
+    statsInvited: "Invitations pending",
+    statsDesigners: "Designers",
+    statsDevelopers: "Developers",
+    activeOfTeam: "of your team",
+    waitingToJoin: "Waiting to join",
+    peopleInRole: "On your team",
     teamOverview: "Team overview",
-    workingTogether: "Three teammates working together",
+    teamCount: "People in your workspace",
+    workingTogether: "{count} teammates collaborating",
     helpCopy: "We’re here to help",
     footerCopy: "Made for people, by people.",
+    localData: "Your changes stay on this device",
+    storageError: "Your browser could not save this workspace. Changes may not survive a refresh.",
+    navigation: "Main navigation",
+    skipToContent: "Skip to content",
     aboutDemo: "About this demo",
     roleDesigner: "Designer",
     roleDeveloper: "Developer",
@@ -136,13 +219,23 @@ const copy = {
     name: "الاسم",
     role: "الدور",
     status: "الحالة",
+    actions: "الإجراءات",
     active: "نشط",
     invited: "تمت الدعوة",
-    designers: "المصممون",
-    projects: "المشاريع",
-    completion: "تركيز الأسبوع",
-    thisWeek: "هذا الأسبوع",
-    completionCopy: "فريقك ينسجم في العمل.",
+    allRoles: "كل الأدوار",
+    edit: "تعديل",
+    remove: "إزالة",
+    updateMember: "حفظ التعديلات",
+    cancel: "إلغاء",
+    deleteTitle: "إزالة عضو الفريق؟",
+    deleteCopy: "سيتم حذف {name} من مساحة العمل التجريبية على هذا الجهاز.",
+    deleteConfirm: "إزالة العضو",
+    memberUpdated: "تم تحديث بيانات عضو الفريق.",
+    memberRemoved: "تمت إزالة عضو الفريق.",
+    duplicateEmail: "هذا البريد الإلكتروني موجود بالفعل في الفريق.",
+    completion: "حالة الفريق",
+    thisWeek: "فريقك",
+    completionCopy: "استنادًا إلى الحالة الحالية لكل عضو.",
     quickTitle: "طريقة أهدأ للعمل",
     quickCopy: "مساحة العمل التجريبية هذه مبنية من مكونات سهلة الوصول. جرّب الخيارات وخصصها كما تحب.",
     explore: "استكشف المكونات",
@@ -182,17 +275,22 @@ const copy = {
     tipThree: "غيّر اللغة أو المظهر من أعلى الصفحة.",
     mobileMenu: "فتح القائمة",
     statsPeople: "الأشخاص",
-    statsActive: "نشطون هذا الأسبوع",
-    statsProjects: "المشاريع المشتركة",
-    statsTime: "الوقت المُوفّر",
-    monthlyChange: "هذا الشهر",
-    weeklyChange: "مقارنة بالأسبوع الماضي",
-    teamCount: "ضمن ٣ فرق",
-    collaborationTime: "بفضل التعاون",
+    statsActive: "أعضاء نشطون",
+    statsInvited: "دعوات قيد الانتظار",
+    statsDesigners: "المصممون",
+    statsDevelopers: "المطورون",
+    activeOfTeam: "من أعضاء الفريق",
+    waitingToJoin: "بانتظار الانضمام",
+    peopleInRole: "في فريقك",
     teamOverview: "نظرة عامة على الفريق",
-    workingTogether: "ثلاثة زملاء يعملون معًا",
+    teamCount: "أشخاص في مساحة العمل",
+    workingTogether: "{count} زملاء يعملون معًا",
     helpCopy: "نحن هنا للمساعدة",
     footerCopy: "صُنع لأجل الناس، وبأيدي الناس.",
+    localData: "تغييراتك محفوظة على هذا الجهاز",
+    storageError: "تعذّر على المتصفح حفظ مساحة العمل. قد لا تبقى التغييرات بعد تحديث الصفحة.",
+    navigation: "التنقل الرئيسي",
+    skipToContent: "انتقل إلى المحتوى",
     aboutDemo: "حول هذا العرض",
     roleDesigner: "مصمم",
     roleDeveloper: "مطور",
@@ -215,32 +313,67 @@ function Avatar({ name, className = "" }: { name: string; className?: string }) 
 }
 
 function App() {
-  const [direction, setDirection] = useState<Direction>("ltr");
-  const [theme, setTheme] = useState<Theme>("light");
+  const [loadedWorkspace] = useState(readWorkspace);
+  const [direction, setDirection] = useState<Direction>(loadedWorkspace.value.direction);
+  const [theme, setTheme] = useState<Theme>(loadedWorkspace.value.theme);
   const [section, setSection] = useState<Section>("overview");
-  const [members, setMembers] = useState(initialMembers);
+  const [members, setMembers] = useState(loadedWorkspace.value.members);
   const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
   const [page, setPage] = useState(1);
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [editingMember, setEditingMember] = useState<Member | null>(null);
+  const [removingMember, setRemovingMember] = useState<Member | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [notifications, setNotifications] = useState(true);
-  const [checkIn, setCheckIn] = useState<Date | null>(null);
+  const [notifications, setNotifications] = useState(loadedWorkspace.value.notifications);
+  const [checkIn, setCheckIn] = useState<Date | null>(
+    loadedWorkspace.value.checkIn ? new Date(loadedWorkspace.value.checkIn) : null,
+  );
+  const [storageFailed, setStorageFailed] = useState(loadedWorkspace.failed);
   const [notice, setNotice] = useState("");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("");
+  const [memberStatus, setMemberStatus] = useState("Active");
   const [errors, setErrors] = useState({ name: "", email: "" });
   const t = direction === "rtl" ? copy.ar : copy.en;
+
+  useEffect(() => {
+    try {
+      const workspace: WorkspaceSnapshot = {
+        members,
+        direction,
+        theme,
+        notifications,
+        checkIn: checkIn?.toISOString() ?? null,
+      };
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(workspace));
+      setStorageFailed(false);
+    } catch (error) {
+      console.error("Could not save the Namaa workspace.", error);
+      setStorageFailed(true);
+    }
+  }, [checkIn, direction, members, notifications, theme]);
 
   const filteredMembers = useMemo(
     () =>
       members.filter((member) =>
-        `${member.name} ${member.email} ${member.role}`.toLowerCase().includes(search.toLowerCase()),
+        `${member.name} ${member.email} ${member.role}`.toLowerCase().includes(search.toLowerCase()) &&
+        (!roleFilter || member.role === roleFilter),
       ),
-    [members, search],
+    [members, roleFilter, search],
   );
   const pageCount = Math.max(1, Math.ceil(filteredMembers.length / 3));
   const visibleMembers = filteredMembers.slice((page - 1) * 3, page * 3);
+  const activeCount = members.filter((member) => member.status === "Active").length;
+  const invitedCount = members.filter((member) => member.status === "Invited").length;
+  const designerCount = members.filter((member) => member.role === "Designer").length;
+  const developerCount = members.filter((member) => member.role === "Developer").length;
+  const activePercentage = members.length ? Math.round((activeCount / members.length) * 100) : 0;
+
+  useEffect(() => {
+    if (page > pageCount) setPage(pageCount);
+  }, [page, pageCount]);
 
   const columns: DataTableColumn<Member>[] = [
     {
@@ -281,7 +414,42 @@ function App() {
         </span>
       ),
     },
+    {
+      key: "id",
+      header: t.actions,
+      render: (_, member) => (
+        <DropdownMenu
+          label={`${t.more}: ${member.name}`}
+          items={[
+            { label: t.edit, onSelect: () => openEditMember(member) },
+            { label: t.remove, onSelect: () => setRemovingMember(member) },
+          ]}
+        />
+      ),
+    },
   ];
+
+  function resetMemberForm() {
+    setName("");
+    setEmail("");
+    setRole("");
+    setMemberStatus("Active");
+    setErrors({ name: "", email: "" });
+  }
+
+  function openInvite() {
+    resetMemberForm();
+    setInviteOpen(true);
+  }
+
+  function openEditMember(member: Member) {
+    setName(member.name);
+    setEmail(member.email);
+    setRole(member.role);
+    setMemberStatus(member.status);
+    setErrors({ name: "", email: "" });
+    setEditingMember(member);
+  }
 
   function showNotice(message: string) {
     setNotice(message);
@@ -292,26 +460,82 @@ function App() {
     setMenuOpen(false);
   }
 
-  function submitInvite(event: FormEvent<HTMLFormElement>) {
+  function submitMember(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const normalizedEmail = email.trim().toLowerCase();
+    const duplicateEmail = members.some(
+      (member) => member.email.toLowerCase() === normalizedEmail && member.id !== editingMember?.id,
+    );
     const nextErrors = {
       name: name.trim() ? "" : t.nameRequired,
-      email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? "" : t.emailRequired,
+      email: !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)
+        ? t.emailRequired
+        : duplicateEmail
+          ? t.duplicateEmail
+          : "",
     };
     setErrors(nextErrors);
     if (nextErrors.name || nextErrors.email) return;
 
-    setMembers((current) => [
-      ...current,
-      { id: Date.now(), name: name.trim(), email: email.trim(), role, status: "Invited" },
-    ]);
-    setSearch("");
-    setPage(Math.ceil((members.length + 1) / 3));
+    if (editingMember) {
+      setMembers((current) =>
+        current.map((member) =>
+          member.id === editingMember.id
+            ? { ...member, name: name.trim(), email: normalizedEmail, role, status: memberStatus }
+            : member,
+        ),
+      );
+      setEditingMember(null);
+      showNotice(t.memberUpdated);
+    } else {
+      setMembers((current) => [
+        ...current,
+        { id: Date.now(), name: name.trim(), email: normalizedEmail, role, status: "Invited" },
+      ]);
+      setSearch("");
+      setRoleFilter("");
+      setPage(Math.ceil((members.length + 1) / 3));
+      showNotice(t.memberAdded);
+    }
     setInviteOpen(false);
-    setName("");
-    setEmail("");
-    setRole("");
-    showNotice(t.memberAdded);
+    resetMemberForm();
+  }
+
+  function confirmRemoveMember() {
+    if (!removingMember) return;
+    setMembers((current) => current.filter((member) => member.id !== removingMember.id));
+    setRemovingMember(null);
+    setPage(1);
+    showNotice(t.memberRemoved);
+  }
+
+  function exportTeam() {
+    const csvValue = (value: string) => {
+      const safeValue = /^[=+\-@]/.test(value) ? `'${value}` : value;
+      return `"${safeValue.replaceAll('"', '""')}"`;
+    };
+    const rows = [
+      [t.name, t.email, t.role, t.status],
+      ...members.map((member) => [
+        member.name,
+        member.email,
+        member.role === "Designer"
+          ? t.roleDesigner
+          : member.role === "Developer"
+            ? t.roleDeveloper
+            : t.roleManager,
+        member.status === "Active" ? t.active : t.invited,
+      ]),
+    ];
+    const csv = `\uFEFF${rows.map((row) => row.map(csvValue).join(",")).join("\r\n")}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "namaa-team.csv";
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
   function content() {
@@ -383,7 +607,7 @@ function App() {
                 <h2>{t.members}</h2>
                 <p className="demo-muted">{t.membersDescription}</p>
               </div>
-              <Button onClick={() => setInviteOpen(true)}>{t.invite}</Button>
+              <Button onClick={openInvite}>{t.invite}</Button>
             </div>
             {teamTable()}
           </section>
@@ -406,7 +630,7 @@ function App() {
             </p>
             <h2>{t.title}</h2>
             <p>{t.subtitle}</p>
-            <Button onClick={() => setInviteOpen(true)}>
+            <Button onClick={openInvite}>
               <span aria-hidden="true">＋</span> {t.invite}
             </Button>
           </div>
@@ -425,25 +649,25 @@ function App() {
             <span className="demo-stat-icon demo-stat-icon--purple" aria-hidden="true">◎</span>
             <span className="demo-stat-label">{t.statsPeople}</span>
             <strong>{members.length.toString().padStart(2, "0")}</strong>
-            <small><span className="demo-up">↗ 2</span> {t.monthlyChange}</small>
+            <small>{t.teamCount}</small>
           </article>
           <article className="demo-stat-card">
             <span className="demo-stat-icon demo-stat-icon--green" aria-hidden="true">✓</span>
             <span className="demo-stat-label">{t.statsActive}</span>
-            <strong>86%</strong>
-            <small><span className="demo-up">↗ 8%</span> {t.weeklyChange}</small>
+            <strong>{activeCount}</strong>
+            <small>{activePercentage}% {t.activeOfTeam}</small>
           </article>
           <article className="demo-stat-card">
             <span className="demo-stat-icon demo-stat-icon--orange" aria-hidden="true">◇</span>
-            <span className="demo-stat-label">{t.statsProjects}</span>
-            <strong>12</strong>
-            <small>{t.teamCount}</small>
+            <span className="demo-stat-label">{t.statsInvited}</span>
+            <strong>{invitedCount}</strong>
+            <small>{t.waitingToJoin}</small>
           </article>
           <article className="demo-stat-card">
             <span className="demo-stat-icon demo-stat-icon--blue" aria-hidden="true">◷</span>
-            <span className="demo-stat-label">{t.statsTime}</span>
-            <strong>4.5h</strong>
-            <small>{t.collaborationTime}</small>
+            <span className="demo-stat-label">{t.statsDesigners} · {t.statsDevelopers}</span>
+            <strong>{designerCount} · {developerCount}</strong>
+            <small>{t.peopleInRole}</small>
           </article>
         </section>
 
@@ -455,7 +679,7 @@ function App() {
                 <h2>{t.members}</h2>
                 <p className="demo-muted">{t.membersDescription}</p>
               </div>
-              <Button onClick={() => setInviteOpen(true)}>{t.invite}</Button>
+              <Button onClick={openInvite}>{t.invite}</Button>
             </div>
             {teamTable()}
           </section>
@@ -467,17 +691,15 @@ function App() {
                 <span className="demo-heading-icon" aria-hidden="true">⌁</span>
               </div>
               <div className="demo-progress-wrap">
-                <div className="demo-progress" role="progressbar" aria-label={t.completion} aria-valuenow={72} aria-valuemin={0} aria-valuemax={100}>
-                  <span />
+                <div className="demo-progress" role="progressbar" aria-label={t.completion} aria-valuenow={activePercentage} aria-valuemin={0} aria-valuemax={100}>
+                  <span style={{ inlineSize: `${activePercentage}%` }} />
                 </div>
-                <strong>72%</strong>
+                <strong>{activePercentage}%</strong>
               </div>
               <p className="demo-muted">{t.completionCopy}</p>
-              <div className="demo-avatar-stack" aria-label={t.workingTogether}>
-                <Avatar name="Amina Hassan" />
-                <Avatar name="Omar Khalil" />
-                <Avatar name="Lina Faris" />
-                <span>+2</span>
+              <div className="demo-avatar-stack" aria-label={t.workingTogether.replace("{count}", String(members.length))}>
+                {members.slice(0, 3).map((member) => <Avatar key={member.id} name={member.name} />)}
+                {members.length > 3 && <span>+{members.length - 3}</span>}
               </div>
             </section>
             <section className="demo-card demo-tip-card">
@@ -517,33 +739,49 @@ function App() {
             items={[
               {
                 label: t.export,
-                onSelect: () => showNotice(t.exportDone),
+                onSelect: exportTeam,
               },
             ]}
           />
+          <Select
+            aria-label={t.role}
+            className="demo-role-filter"
+            value={roleFilter}
+            onChange={(event) => {
+              setRoleFilter(event.target.value);
+              setPage(1);
+            }}
+          >
+            <option value="">{t.allRoles}</option>
+            <option value="Designer">{t.roleDesigner}</option>
+            <option value="Developer">{t.roleDeveloper}</option>
+            <option value="Product manager">{t.roleManager}</option>
+          </Select>
         </div>
-        <DataTable
-          caption={t.membersDescription}
-          columns={columns}
-          rows={visibleMembers}
-        />
         {filteredMembers.length === 0 ? (
           <p className="demo-empty">{t.searchEmpty}</p>
         ) : (
-          <div className="demo-table-footer">
-            <span>
-              {t.memberCount.replace(
-                "{count}",
-                members.length.toLocaleString(direction === "rtl" ? "ar" : "en"),
-              )}
-            </span>
-            <Pagination
-              page={page}
-              pageCount={pageCount}
-              onPageChange={setPage}
-              label={t.pageLabel}
+          <>
+            <DataTable
+              caption={t.membersDescription}
+              columns={columns}
+              rows={visibleMembers}
             />
-          </div>
+            <div className="demo-table-footer">
+              <span>
+                {t.memberCount.replace(
+                  "{count}",
+                  members.length.toLocaleString(direction === "rtl" ? "ar" : "en"),
+                )}
+              </span>
+              <Pagination
+                page={page}
+                pageCount={pageCount}
+                onPageChange={setPage}
+                label={t.pageLabel}
+              />
+            </div>
+          </>
         )}
       </>
     );
@@ -606,13 +844,13 @@ function App() {
   return (
     <ThemeProvider dir={direction} theme={theme}>
       <div className="demo-app" lang={direction === "rtl" ? "ar" : "en"}>
-        <a className="demo-skip-link" href="#main-content">Skip to content</a>
-        <aside className="demo-sidebar" aria-label="Main navigation">
+        <a className="demo-skip-link" href="#main-content">{t.skipToContent}</a>
+        <aside className="demo-sidebar" aria-label={t.navigation}>
           <a className="demo-brand" href="#main-content" onClick={() => navigate("overview")}>
             <span className="demo-brand-mark" aria-hidden="true">n</span>
             <span>{t.brand}<small>team workspace</small></span>
           </a>
-          <nav className="demo-nav" aria-label="Workspace">{navigation}</nav>
+          <nav className="demo-nav" aria-label={t.workspace}>{navigation}</nav>
         </aside>
 
         <div className="demo-main-column">
@@ -659,19 +897,27 @@ function App() {
           <main className="demo-page" id="main-content">
             {content()}
             <footer className="demo-footer">
-              <span>{t.footerCopy}</span>
+              <span>{storageFailed ? t.storageError : t.localData}</span>
               <a href="https://github.com/hamzehabbass/accessible-component-library">{t.aboutDemo}</a>
             </footer>
           </main>
         </div>
 
         <Drawer open={menuOpen} onClose={() => setMenuOpen(false)} title={t.brand} placement="start">
-          <nav className="demo-nav demo-drawer-nav" aria-label="Workspace">{navigation}</nav>
+          <nav className="demo-nav demo-drawer-nav" aria-label={t.workspace}>{navigation}</nav>
         </Drawer>
 
-        <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title={t.inviteTitle}>
-          <p className="demo-modal-description">{t.inviteCopy}</p>
-          <form className="demo-invite-form" noValidate onSubmit={submitInvite}>
+        <Modal
+          open={inviteOpen || editingMember !== null}
+          onClose={() => {
+            setInviteOpen(false);
+            setEditingMember(null);
+            resetMemberForm();
+          }}
+          title={editingMember ? t.edit : t.inviteTitle}
+        >
+          <p className="demo-modal-description">{editingMember ? t.membersDescription : t.inviteCopy}</p>
+          <form className="demo-invite-form" noValidate onSubmit={submitMember}>
             <FormField label={t.fullName} error={errors.name} required>
               <Input
                 autoComplete="name"
@@ -697,16 +943,49 @@ function App() {
                 <option value="Product manager">{t.manager}</option>
               </Select>
             </FormField>
-            <Checkbox defaultChecked>{t.notifications}</Checkbox>
+            {editingMember && (
+              <FormField label={t.status} required>
+                <Select value={memberStatus} onChange={(event) => setMemberStatus(event.target.value)} required>
+                  <option value="Active">{t.active}</option>
+                  <option value="Invited">{t.invited}</option>
+                </Select>
+              </FormField>
+            )}
+            {!editingMember && <Checkbox defaultChecked>{t.notifications}</Checkbox>}
             <div className="demo-modal-actions">
-              <Button type="button" variant="secondary" onClick={() => setInviteOpen(false)}>
-                {direction === "rtl" ? "إلغاء" : "Cancel"}
+              <Button type="button" variant="secondary" onClick={() => {
+                setInviteOpen(false);
+                setEditingMember(null);
+                resetMemberForm();
+              }}>
+                {t.cancel}
               </Button>
-              <Button type="submit">{t.sendInvite}</Button>
+              <Button type="submit">{editingMember ? t.updateMember : t.sendInvite}</Button>
             </div>
           </form>
         </Modal>
 
+        <Modal
+          open={removingMember !== null}
+          onClose={() => setRemovingMember(null)}
+          title={t.deleteTitle}
+        >
+          <p className="demo-modal-description">
+            {t.deleteCopy.replace("{name}", removingMember?.name ?? "")}
+          </p>
+          <div className="demo-modal-actions">
+            <Button type="button" variant="secondary" onClick={() => setRemovingMember(null)}>
+              {t.cancel}
+            </Button>
+            <Button type="button" variant="danger" onClick={confirmRemoveMember}>
+              {t.deleteConfirm}
+            </Button>
+          </div>
+        </Modal>
+
+        {storageFailed && (
+          <p className="demo-storage-warning" role="alert">{t.storageError}</p>
+        )}
         {notice && <Toast onDismiss={() => setNotice("")}>{notice}</Toast>}
       </div>
     </ThemeProvider>
