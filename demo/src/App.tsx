@@ -22,7 +22,7 @@ import {
 
 type Direction = "ltr" | "rtl";
 type Theme = "light" | "dark";
-type Section = "overview" | "team" | "settings";
+type Section = "overview" | "team" | "projects" | "settings";
 type Member = {
   id: number;
   name: string;
@@ -30,9 +30,24 @@ type Member = {
   role: string;
   status: string;
 };
+type ProjectTask = {
+  id: number;
+  title: string;
+  completed: boolean;
+};
+type Project = {
+  id: number;
+  name: string;
+  description: string;
+  deadline: string;
+  color: "violet" | "mint" | "amber";
+  tasks: ProjectTask[];
+};
 
 type WorkspaceSnapshot = {
   members: Member[];
+  projects: Project[];
+  selectedProjectId: number | null;
   direction: Direction;
   theme: Theme;
   notifications: boolean;
@@ -49,8 +64,49 @@ const initialMembers: Member[] = [
   { id: 5, name: "Sara Haddad", email: "sara@example.com", role: "Designer", status: "Active" },
 ];
 
+const initialProjects: Project[] = [
+  {
+    id: 101,
+    name: "Website redesign",
+    description: "A clearer, more welcoming home for the product.",
+    deadline: "2026-11-18",
+    color: "violet",
+    tasks: [
+      { id: 1001, title: "Gather customer feedback", completed: true },
+      { id: 1002, title: "Approve homepage direction", completed: false },
+      { id: 1003, title: "Prepare mobile layouts", completed: false },
+    ],
+  },
+  {
+    id: 102,
+    name: "Mobile app",
+    description: "Make the everyday experience feel effortless.",
+    deadline: "2026-12-04",
+    color: "mint",
+    tasks: [
+      { id: 2001, title: "Map the first-run experience", completed: true },
+      { id: 2002, title: "Build the navigation prototype", completed: true },
+      { id: 2003, title: "Review accessibility states", completed: false },
+      { id: 2004, title: "Test with the team", completed: false },
+    ],
+  },
+  {
+    id: 103,
+    name: "Launch campaign",
+    description: "Bring the next chapter to the people who need it.",
+    deadline: "2026-12-15",
+    color: "amber",
+    tasks: [
+      { id: 3001, title: "Write the launch story", completed: true },
+      { id: 3002, title: "Create campaign assets", completed: false },
+    ],
+  },
+];
+
 const defaultWorkspace: WorkspaceSnapshot = {
   members: initialMembers,
+  projects: initialProjects,
+  selectedProjectId: initialProjects[0].id,
   direction: "ltr",
   theme: "light",
   notifications: true,
@@ -71,6 +127,30 @@ function isMember(value: unknown): value is Member {
   );
 }
 
+function isProjectTask(value: unknown): value is ProjectTask {
+  if (typeof value !== "object" || value === null) return false;
+  const task = value as Record<string, unknown>;
+  return (
+    typeof task.id === "number" &&
+    typeof task.title === "string" &&
+    typeof task.completed === "boolean"
+  );
+}
+
+function isProject(value: unknown): value is Project {
+  if (typeof value !== "object" || value === null) return false;
+  const project = value as Record<string, unknown>;
+  return (
+    typeof project.id === "number" &&
+    typeof project.name === "string" &&
+    typeof project.description === "string" &&
+    typeof project.deadline === "string" &&
+    ["violet", "mint", "amber"].includes(project.color as string) &&
+    Array.isArray(project.tasks) &&
+    project.tasks.every(isProjectTask)
+  );
+}
+
 function readWorkspace(): { value: WorkspaceSnapshot; failed: boolean } {
   try {
     const serialized = window.localStorage.getItem(STORAGE_KEY);
@@ -82,6 +162,11 @@ function readWorkspace(): { value: WorkspaceSnapshot; failed: boolean } {
     if (
       !Array.isArray(saved.members) ||
       !saved.members.every(isMember) ||
+      (saved.projects !== undefined &&
+        (!Array.isArray(saved.projects) || !saved.projects.every(isProject))) ||
+      (saved.selectedProjectId !== undefined &&
+        saved.selectedProjectId !== null &&
+        typeof saved.selectedProjectId !== "number") ||
       (saved.direction !== "ltr" && saved.direction !== "rtl") ||
       (saved.theme !== "light" && saved.theme !== "dark") ||
       typeof saved.notifications !== "boolean" ||
@@ -94,6 +179,14 @@ function readWorkspace(): { value: WorkspaceSnapshot; failed: boolean } {
     return {
       value: {
         members: saved.members,
+        projects: saved.projects ?? initialProjects,
+        selectedProjectId:
+          typeof saved.selectedProjectId === "number" &&
+          (saved.projects ?? initialProjects).some(
+            (project) => project.id === saved.selectedProjectId,
+          )
+            ? saved.selectedProjectId
+            : (saved.projects ?? initialProjects)[0]?.id ?? null,
         direction: saved.direction,
         theme: saved.theme,
         notifications: saved.notifications,
@@ -113,6 +206,7 @@ const copy = {
     workspace: "YOUR WORKSPACE",
     overview: "Overview",
     team: "Team",
+    projects: "Projects",
     settings: "Settings",
     help: "Help center",
     title: "Good morning, Hamzeh",
@@ -139,6 +233,45 @@ const copy = {
     memberUpdated: "Teammate details updated.",
     memberRemoved: "Teammate removed.",
     duplicateEmail: "This email is already in your team.",
+    projectOverview: "A little progress, one step at a time.",
+    projectCount: "{count} projects",
+    tasksDone: "{done} of {total} tasks complete",
+    projectProgress: "Project progress",
+    due: "Due",
+    taskList: "Project tasks",
+    addTask: "Add task",
+    taskPlaceholder: "What needs to get done?",
+    taskRequired: "Add a task name first.",
+    noTasks: "No tasks yet. Add the first small step.",
+    newProject: "New project",
+    createProject: "Create project",
+    projectName: "Project name",
+    projectDescription: "A short description",
+    projectDeadline: "Target date",
+    projectRequired: "Give your project a name.",
+    projectAdded: "Your project is ready.",
+    taskAdded: "Task added.",
+    taskRemoved: "Task removed.",
+    noProjects: "A new idea starts with one project.",
+    markComplete: "Mark complete",
+    markIncomplete: "Mark incomplete",
+    removeTask: "Remove task",
+    projectWebsite: "Website redesign",
+    projectMobile: "Mobile app",
+    projectCampaign: "Launch campaign",
+    projectWebsiteDescription: "A clearer, more welcoming home for the product.",
+    projectMobileDescription: "Make the everyday experience feel effortless.",
+    projectCampaignDescription: "Bring the next chapter to the people who need it.",
+    taskFeedback: "Gather customer feedback",
+    taskHomepage: "Approve homepage direction",
+    taskLayouts: "Prepare mobile layouts",
+    taskFirstRun: "Map the first-run experience",
+    taskPrototype: "Build the navigation prototype",
+    taskAccessibility: "Review accessibility states",
+    taskTeamTest: "Test with the team",
+    taskStory: "Write the launch story",
+    taskAssets: "Create campaign assets",
+    deleteProject: "Remove project",
     completion: "Team availability",
     thisWeek: "YOUR TEAM",
     completionCopy: "Based on each teammate’s current status.",
@@ -207,6 +340,7 @@ const copy = {
     workspace: "مساحة العمل",
     overview: "نظرة عامة",
     team: "الفريق",
+    projects: "المشاريع",
     settings: "الإعدادات",
     help: "مركز المساعدة",
     title: "صباح الخير، حمزة",
@@ -233,6 +367,45 @@ const copy = {
     memberUpdated: "تم تحديث بيانات عضو الفريق.",
     memberRemoved: "تمت إزالة عضو الفريق.",
     duplicateEmail: "هذا البريد الإلكتروني موجود بالفعل في الفريق.",
+    projectOverview: "إنجازات صغيرة، خطوة بخطوة.",
+    projectCount: "{count} مشاريع",
+    tasksDone: "أُنجزت {done} من أصل {total} مهام",
+    projectProgress: "تقدّم المشروع",
+    due: "الموعد",
+    taskList: "مهام المشروع",
+    addTask: "إضافة مهمة",
+    taskPlaceholder: "ما الخطوة التالية؟",
+    taskRequired: "أدخل اسم المهمة أولًا.",
+    noTasks: "لا توجد مهام بعد. أضف أول خطوة.",
+    newProject: "مشروع جديد",
+    createProject: "إنشاء المشروع",
+    projectName: "اسم المشروع",
+    projectDescription: "وصف قصير",
+    projectDeadline: "الموعد المستهدف",
+    projectRequired: "يرجى إدخال اسم للمشروع.",
+    projectAdded: "مشروعك جاهز.",
+    taskAdded: "تمت إضافة المهمة.",
+    taskRemoved: "تم حذف المهمة.",
+    noProjects: "كل فكرة جديدة تبدأ بمشروع.",
+    markComplete: "تحديد كمكتملة",
+    markIncomplete: "تحديد كغير مكتملة",
+    removeTask: "حذف المهمة",
+    projectWebsite: "إعادة تصميم الموقع",
+    projectMobile: "تطبيق الهاتف",
+    projectCampaign: "حملة الإطلاق",
+    projectWebsiteDescription: "واجهة أوضح وأكثر ترحيبًا للمنتج.",
+    projectMobileDescription: "تجربة يومية سهلة وسلسة.",
+    projectCampaignDescription: "إيصال الفصل الجديد إلى من يحتاجه.",
+    taskFeedback: "جمع آراء العملاء",
+    taskHomepage: "اعتماد اتجاه الصفحة الرئيسية",
+    taskLayouts: "تجهيز تصاميم الهاتف",
+    taskFirstRun: "تخطيط تجربة الاستخدام الأولى",
+    taskPrototype: "بناء نموذج التنقل",
+    taskAccessibility: "مراجعة حالات سهولة الوصول",
+    taskTeamTest: "اختبار التجربة مع الفريق",
+    taskStory: "كتابة قصة الإطلاق",
+    taskAssets: "إنشاء مواد الحملة",
+    deleteProject: "إزالة المشروع",
     completion: "حالة الفريق",
     thisWeek: "فريقك",
     completionCopy: "استنادًا إلى الحالة الحالية لكل عضو.",
@@ -318,6 +491,16 @@ function App() {
   const [theme, setTheme] = useState<Theme>(loadedWorkspace.value.theme);
   const [section, setSection] = useState<Section>("overview");
   const [members, setMembers] = useState(loadedWorkspace.value.members);
+  const [projects, setProjects] = useState(loadedWorkspace.value.projects);
+  const [selectedProjectId, setSelectedProjectId] = useState(
+    loadedWorkspace.value.selectedProjectId,
+  );
+  const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  const [projectName, setProjectName] = useState("");
+  const [projectDescription, setProjectDescription] = useState("");
+  const [projectDeadline, setProjectDeadline] = useState("");
+  const [projectError, setProjectError] = useState("");
+  const [taskDraft, setTaskDraft] = useState("");
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [page, setPage] = useState(1);
@@ -342,6 +525,8 @@ function App() {
     try {
       const workspace: WorkspaceSnapshot = {
         members,
+        projects,
+        selectedProjectId,
         direction,
         theme,
         notifications,
@@ -353,7 +538,7 @@ function App() {
       console.error("Could not save the Namaa workspace.", error);
       setStorageFailed(true);
     }
-  }, [checkIn, direction, members, notifications, theme]);
+  }, [checkIn, direction, members, notifications, projects, selectedProjectId, theme]);
 
   const filteredMembers = useMemo(
     () =>
@@ -370,6 +555,44 @@ function App() {
   const designerCount = members.filter((member) => member.role === "Designer").length;
   const developerCount = members.filter((member) => member.role === "Developer").length;
   const activePercentage = members.length ? Math.round((activeCount / members.length) * 100) : 0;
+  const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? projects[0] ?? null;
+  const completedProjectTasks = projects.flatMap((project) => project.tasks).filter((task) => task.completed).length;
+  const totalProjectTasks = projects.reduce((total, project) => total + project.tasks.length, 0);
+
+  function displayProjectName(project: Project) {
+    if (project.name === "Website redesign") return t.projectWebsite;
+    if (project.name === "Mobile app") return t.projectMobile;
+    if (project.name === "Launch campaign") return t.projectCampaign;
+    return project.name;
+  }
+
+  function displayTaskTitle(task: ProjectTask) {
+    const translatedTasks: Record<string, string> = {
+      "Gather customer feedback": t.taskFeedback,
+      "Approve homepage direction": t.taskHomepage,
+      "Prepare mobile layouts": t.taskLayouts,
+      "Map the first-run experience": t.taskFirstRun,
+      "Build the navigation prototype": t.taskPrototype,
+      "Review accessibility states": t.taskAccessibility,
+      "Test with the team": t.taskTeamTest,
+      "Write the launch story": t.taskStory,
+      "Create campaign assets": t.taskAssets,
+    };
+    return translatedTasks[task.title] ?? task.title;
+  }
+
+  function displayProjectDescription(project: Project) {
+    if (project.name === "Website redesign") return t.projectWebsiteDescription;
+    if (project.name === "Mobile app") return t.projectMobileDescription;
+    if (project.name === "Launch campaign") return t.projectCampaignDescription;
+    return project.description;
+  }
+
+  function projectProgress(project: Project) {
+    return project.tasks.length
+      ? Math.round((project.tasks.filter((task) => task.completed).length / project.tasks.length) * 100)
+      : 0;
+  }
 
   useEffect(() => {
     if (page > pageCount) setPage(pageCount);
@@ -449,6 +672,91 @@ function App() {
     setMemberStatus(member.status);
     setErrors({ name: "", email: "" });
     setEditingMember(member);
+  }
+
+  function openProjectDialog() {
+    setProjectName("");
+    setProjectDescription("");
+    setProjectDeadline("");
+    setProjectError("");
+    setProjectDialogOpen(true);
+  }
+
+  function submitProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const cleanName = projectName.trim();
+    if (!cleanName) {
+      setProjectError(t.projectRequired);
+      return;
+    }
+
+    const project: Project = {
+      id: Date.now(),
+      name: cleanName,
+      description: projectDescription.trim(),
+      deadline: projectDeadline,
+      color: (["violet", "mint", "amber"] as const)[projects.length % 3],
+      tasks: [],
+    };
+    setProjects((current) => [...current, project]);
+    setSelectedProjectId(project.id);
+    setProjectDialogOpen(false);
+    setSection("projects");
+    showNotice(t.projectAdded);
+  }
+
+  function addTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const cleanTitle = taskDraft.trim();
+    if (!cleanTitle || !selectedProject) return;
+    setProjects((current) =>
+      current.map((project) =>
+        project.id === selectedProject.id
+          ? {
+              ...project,
+              tasks: [...project.tasks, { id: Date.now(), title: cleanTitle, completed: false }],
+            }
+          : project,
+      ),
+    );
+    setTaskDraft("");
+    showNotice(t.taskAdded);
+  }
+
+  function toggleTask(taskId: number) {
+    if (!selectedProject) return;
+    setProjects((current) =>
+      current.map((project) =>
+        project.id === selectedProject.id
+          ? {
+              ...project,
+              tasks: project.tasks.map((task) =>
+                task.id === taskId ? { ...task, completed: !task.completed } : task,
+              ),
+            }
+          : project,
+      ),
+    );
+  }
+
+  function removeTask(taskId: number) {
+    if (!selectedProject) return;
+    setProjects((current) =>
+      current.map((project) =>
+        project.id === selectedProject.id
+          ? { ...project, tasks: project.tasks.filter((task) => task.id !== taskId) }
+          : project,
+      ),
+    );
+    showNotice(t.taskRemoved);
+  }
+
+  function formatProjectDate(value: string) {
+    if (!value) return "";
+    return new Date(`${value}T12:00:00`).toLocaleDateString(direction === "rtl" ? "ar" : "en", {
+      month: "short",
+      day: "numeric",
+    });
   }
 
   function showNotice(message: string) {
@@ -539,6 +847,156 @@ function App() {
   }
 
   function content() {
+    if (section === "projects") {
+      return (
+        <section className="demo-projects-page">
+          <div className="demo-page-heading">
+            <div>
+              <p className="demo-eyebrow">{t.projects}</p>
+              <h2>{t.projects}</h2>
+              <p className="demo-muted">{t.projectOverview}</p>
+            </div>
+            <Button onClick={openProjectDialog}>
+              <span aria-hidden="true">＋</span> {t.newProject}
+            </Button>
+          </div>
+
+          <div className="demo-project-summary" aria-label={t.projectOverview}>
+            <article className="demo-project-summary-card">
+              <span className="demo-stat-icon demo-stat-icon--purple" aria-hidden="true">◇</span>
+              <span><small>{t.projects}</small><strong>{projects.length}</strong></span>
+            </article>
+            <article className="demo-project-summary-card">
+              <span className="demo-stat-icon demo-stat-icon--green" aria-hidden="true">✓</span>
+              <span>
+                <small>{t.tasksDone.replace("{done}", String(completedProjectTasks)).replace("{total}", String(totalProjectTasks))}</small>
+                <strong>{totalProjectTasks ? Math.round((completedProjectTasks / totalProjectTasks) * 100) : 0}%</strong>
+              </span>
+            </article>
+            <article className="demo-project-summary-card">
+              <span className="demo-stat-icon demo-stat-icon--orange" aria-hidden="true">◎</span>
+              <span><small>{t.team}</small><strong>{members.length}</strong></span>
+            </article>
+          </div>
+
+          {projects.length === 0 ? (
+            <div className="demo-project-empty">
+              <span aria-hidden="true">✦</span>
+              <h3>{t.noProjects}</h3>
+              <p className="demo-muted">{t.projectOverview}</p>
+              <Button onClick={openProjectDialog}>{t.newProject}</Button>
+            </div>
+          ) : (
+            <>
+              <div className="demo-project-grid" aria-label={t.projects}>
+                {projects.map((project) => {
+                  const progress = projectProgress(project);
+                  const completed = project.tasks.filter((task) => task.completed).length;
+                  return (
+                    <article
+                      key={project.id}
+                      className={`demo-project-card demo-project-card--${project.color} ${selectedProject?.id === project.id ? "is-selected" : ""}`}
+                    >
+                      <div className="demo-project-card-top">
+                        <span className="demo-project-mark" aria-hidden="true">
+                          {project.color === "violet" ? "✳" : project.color === "mint" ? "◌" : "✦"}
+                        </span>
+                        {project.deadline && (
+                          <span className="demo-project-deadline">{t.due} · {formatProjectDate(project.deadline)}</span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        className="demo-project-select"
+                        aria-pressed={selectedProject?.id === project.id}
+                        onClick={() => setSelectedProjectId(project.id)}
+                      >
+                        <strong>{displayProjectName(project)}</strong>
+                        <span>{displayProjectDescription(project)}</span>
+                      </button>
+                      <div className="demo-project-progress">
+                        <div
+                          className="demo-progress"
+                          role="progressbar"
+                          aria-label={`${t.projectProgress}: ${displayProjectName(project)}`}
+                          aria-valuenow={progress}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                        >
+                          <span style={{ inlineSize: `${progress}%` }} />
+                        </div>
+                        <strong>{progress}%</strong>
+                      </div>
+                      <div className="demo-project-card-footer">
+                        <span>{t.tasksDone.replace("{done}", String(completed)).replace("{total}", String(project.tasks.length))}</span>
+                        <div className="demo-avatar-pile" aria-label={t.team}>
+                          {members.slice(0, 3).map((member) => (
+                            <Avatar key={member.id} name={member.name} />
+                          ))}
+                          {members.length > 3 && <span>+{members.length - 3}</span>}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+
+              {selectedProject && (
+                <section className="demo-card demo-task-panel" aria-labelledby="project-task-heading">
+                  <div className="demo-card-heading">
+                    <div>
+                      <p className="demo-eyebrow">{t.taskList}</p>
+                      <h3 id="project-task-heading">{displayProjectName(selectedProject)}</h3>
+                    </div>
+                    <span className={`demo-project-mark demo-project-mark--${selectedProject.color}`} aria-hidden="true">✦</span>
+                  </div>
+
+                  {selectedProject.tasks.length === 0 ? (
+                    <p className="demo-empty">{t.noTasks}</p>
+                  ) : (
+                    <ul className="demo-task-list">
+                      {selectedProject.tasks.map((task) => (
+                        <li key={task.id} className={task.completed ? "is-completed" : ""}>
+                          <button
+                            type="button"
+                            className="demo-task-toggle"
+                            aria-label={`${task.completed ? t.markIncomplete : t.markComplete}: ${displayTaskTitle(task)}`}
+                            aria-pressed={task.completed}
+                            onClick={() => toggleTask(task.id)}
+                          >
+                            <span aria-hidden="true">{task.completed ? "✓" : ""}</span>
+                          </button>
+                          <span className="demo-task-title">{displayTaskTitle(task)}</span>
+                          <button
+                            type="button"
+                            className="demo-task-remove"
+                            aria-label={`${t.removeTask}: ${displayTaskTitle(task)}`}
+                            onClick={() => removeTask(task.id)}
+                          >
+                            ×
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+
+                  <form className="demo-add-task-form" onSubmit={addTask}>
+                    <Input
+                      aria-label={t.taskPlaceholder}
+                      value={taskDraft}
+                      onChange={(event) => setTaskDraft(event.target.value)}
+                      placeholder={t.taskPlaceholder}
+                    />
+                    <Button type="submit" disabled={!taskDraft.trim()}>{t.addTask}</Button>
+                  </form>
+                </section>
+              )}
+            </>
+          )}
+        </section>
+      );
+    }
+
     if (section === "settings") {
       return (
         <section className="demo-card demo-settings">
@@ -813,6 +1271,7 @@ function App() {
       {([
         ["overview", "◫", t.overview],
         ["team", "◎", t.team],
+        ["projects", "✳", t.projects],
         ["settings", "⚙", t.settings],
       ] as const).map(([id, icon, label]) => (
         <button
@@ -825,6 +1284,7 @@ function App() {
           <span className="demo-nav-icon" aria-hidden="true">{icon}</span>
           {label}
           {id === "team" && <span className="demo-nav-count">{members.length}</span>}
+          {id === "projects" && <span className="demo-nav-count">{projects.length}</span>}
         </button>
       ))}
       <div className="demo-sidebar-spacer" />
@@ -981,6 +1441,45 @@ function App() {
               {t.deleteConfirm}
             </Button>
           </div>
+        </Modal>
+
+        <Modal
+          open={projectDialogOpen}
+          onClose={() => setProjectDialogOpen(false)}
+          title={t.newProject}
+        >
+          <form className="demo-invite-form" noValidate onSubmit={submitProject}>
+            <FormField label={t.projectName} error={projectError} required>
+              <Input
+                value={projectName}
+                onChange={(event) => {
+                  setProjectName(event.target.value);
+                  if (event.target.value.trim()) setProjectError("");
+                }}
+                placeholder={t.projectWebsite}
+              />
+            </FormField>
+            <FormField label={t.projectDescription}>
+              <Input
+                value={projectDescription}
+                onChange={(event) => setProjectDescription(event.target.value)}
+                placeholder={t.projectOverview}
+              />
+            </FormField>
+            <FormField label={t.projectDeadline}>
+              <Input
+                type="date"
+                value={projectDeadline}
+                onChange={(event) => setProjectDeadline(event.target.value)}
+              />
+            </FormField>
+            <div className="demo-modal-actions">
+              <Button type="button" variant="secondary" onClick={() => setProjectDialogOpen(false)}>
+                {t.cancel}
+              </Button>
+              <Button type="submit">{t.createProject}</Button>
+            </div>
+          </form>
         </Modal>
 
         {storageFailed && (

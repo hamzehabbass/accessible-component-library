@@ -78,7 +78,7 @@ The test suite uses Vitest, React Testing Library, and axe. CI runs linting, tes
 - **npm package:** [hamzehabbass-accessible-ui](https://www.npmjs.com/package/hamzehabbass-accessible-ui) (`0.1.1`)
 - **GitHub repository:** [hamzehabbass/accessible-component-library](https://github.com/hamzehabbass/accessible-component-library)
 
-The demo is a frontend-only sample: invite, edit, remove, search, filter, sort, and export teammates; change preferences; and switch between Arabic/RTL and light/dark. Workspace data is saved in your browser on this device only; there is no account or server, and clearing browser storage removes it. GitHub Actions deploys the Namaa example application and Storybook to GitHub Pages on every push to `main`. The CI workflow runs lint, tests with axe checks and coverage, the package build, and both site builds on pushes and pull requests.
+The demo is a frontend-only sample: manage teammates; create projects and tasks, track progress, and mark work complete; export the team list; change preferences; and switch between Arabic/RTL and light/dark. Workspace data is saved in your browser on this device only; there is no account or server, and clearing browser storage removes it. GitHub Actions deploys the Namaa example application and Storybook to GitHub Pages on every push to `main`. The CI workflow runs lint, tests with axe checks and coverage, the package build, and both site builds on pushes and pull requests.
 
 ## Publishing a new npm version
 

@@ -150,6 +150,65 @@ describe("Namaa demo app", () => {
     await waitFor(() => expect(revokeObjectURL).toHaveBeenCalledOnce());
   });
 
+  it("creates projects, tracks tasks, and saves project progress", async () => {
+    const user = userEvent.setup();
+    const firstRender = render(<App />);
+
+    await user.click(screen.getByRole("button", { name: /^Projects/ }));
+    expect(screen.getByRole("heading", { name: "Projects" })).toBeInTheDocument();
+
+    const feedbackTask = screen.getByRole("button", {
+      name: "Mark incomplete: Gather customer feedback",
+    });
+    await user.click(feedbackTask);
+    expect(screen.getByRole("button", {
+      name: "Mark complete: Gather customer feedback",
+    })).toHaveAttribute("aria-pressed", "false");
+
+    await user.type(screen.getByRole("textbox", { name: "What needs to get done?" }), "Share the first draft");
+    await user.click(screen.getByRole("button", { name: "Add task" }));
+    expect(screen.getByText("Share the first draft")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "New project" }));
+    const dialog = screen.getByRole("dialog", { name: "New project" });
+    await user.click(within(dialog).getByRole("button", { name: "Create project" }));
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("Give your project a name.");
+    await user.type(within(dialog).getByRole("textbox", { name: "Project name" }), "Community launch");
+    await user.type(within(dialog).getByRole("textbox", { name: "A short description" }), "A thoughtful launch for the community.");
+    await user.click(within(dialog).getByRole("button", { name: "Create project" }));
+
+    expect(screen.getByRole("button", { name: /Community launch/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("No tasks yet. Add the first small step.")).toBeInTheDocument();
+    await user.type(screen.getByRole("textbox", { name: "What needs to get done?" }), "Plan the announcement");
+    await user.click(screen.getByRole("button", { name: "Add task" }));
+
+    await waitFor(() => {
+      const saved = JSON.parse(window.localStorage.getItem("namaa-demo-workspace-v1") ?? "{}");
+      expect(saved.projects).toHaveLength(4);
+      expect(saved.projects[0].tasks[0].completed).toBe(false);
+      expect(saved.projects[3].tasks[0].title).toBe("Plan the announcement");
+      expect(saved.selectedProjectId).toBe(saved.projects[3].id);
+    });
+
+    firstRender.unmount();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /^Projects/ }));
+    expect(screen.getByText("Plan the announcement")).toBeInTheDocument();
+  });
+
+  it("keeps the projects page accessible in Arabic and dark mode", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+
+    await user.click(screen.getByRole("button", { name: /^Projects/ }));
+    expect((await axe(container)).violations).toEqual([]);
+
+    await user.click(screen.getByRole("button", { name: "العربية" }));
+    await user.click(screen.getByRole("button", { name: "داكن" }));
+    expect(screen.getByRole("heading", { name: "المشاريع" })).toBeInTheDocument();
+    expect((await axe(container)).violations).toEqual([]);
+  });
+
   it("switches language, direction, theme, and account settings", async () => {
     const user = userEvent.setup();
     render(<App />);
