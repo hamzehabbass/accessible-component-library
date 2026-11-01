@@ -500,6 +500,7 @@ export function DropdownMenu({
     <div className="acl-menu">
       <Button
         ref={triggerRef}
+        variant="ghost"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}

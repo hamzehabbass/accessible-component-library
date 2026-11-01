@@ -151,6 +151,7 @@ describe("accessible component library", () => {
       />,
     );
     const trigger = screen.getByRole("button", { name: "Actions" });
+    expect(trigger).toHaveClass("acl-button--ghost");
     await user.click(trigger);
     expect(screen.getByRole("menuitem", { name: "Edit" })).toHaveFocus();
     await user.keyboard("{Escape}");

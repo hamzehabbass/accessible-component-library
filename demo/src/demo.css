@@ -2334,6 +2334,7 @@
 .demo-team-card .acl-table td:last-child .acl-menu .acl-button {
   min-block-size: 2.25rem;
   border-color: transparent;
+  color: var(--acl-foreground);
   background: transparent;
 }
 
