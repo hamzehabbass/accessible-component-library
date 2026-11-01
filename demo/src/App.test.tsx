@@ -255,6 +255,8 @@ describe("Namaa demo app", () => {
 
     expect(screen.getByRole("heading", { name: "كل المهام بنظرة واحدة" })).toBeInTheDocument();
     expect((await axe(container)).violations).toEqual([]);
+    await user.click(screen.getByRole("button", { name: "التقويم" }));
+    expect((await axe(container)).violations).toEqual([]);
   });
 
   it("migrates saved project tasks that predate board statuses", async () => {
@@ -262,7 +264,13 @@ describe("Namaa demo app", () => {
     const firstRender = render(<App />);
     const saved = JSON.parse(window.localStorage.getItem("namaa-demo-workspace-v1") ?? "{}");
     saved.projects.forEach((project: { tasks: Array<Record<string, unknown>> }) => {
-      project.tasks.forEach((task) => delete task.status);
+      project.tasks.forEach((task) => {
+        delete task.status;
+        delete task.description;
+        delete task.assigneeId;
+        delete task.dueDate;
+        delete task.comments;
+      });
     });
     window.localStorage.setItem("namaa-demo-workspace-v1", JSON.stringify(saved));
     firstRender.unmount();
@@ -275,6 +283,99 @@ describe("Namaa demo app", () => {
     expect(
       screen.getByRole("combobox", { name: "Change task status: Prepare mobile layouts" }),
     ).toHaveValue("todo");
+  });
+
+  it("saves task owners, due dates, descriptions, and comments", async () => {
+    const user = userEvent.setup();
+    const { container, unmount } = render(<App />);
+    await user.click(screen.getByRole("button", { name: /^Tasks/ }));
+    await user.click(screen.getByRole("button", { name: "Edit details: Prepare mobile layouts" }));
+
+    const dialog = screen.getByRole("dialog", {
+      name: "Task details: Prepare mobile layouts",
+    });
+    expect((await axe(container)).violations).toEqual([]);
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Task description" }),
+      "Prepare the responsive screen designs.",
+    );
+    await user.selectOptions(within(dialog).getByRole("combobox", { name: "Assigned to" }), "2");
+    fireEvent.change(within(dialog).getByLabelText("Due date"), {
+      target: { value: "2027-05-01" },
+    });
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Write a comment..." }),
+      "I will share a first draft.",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Add comment" }));
+    expect(within(dialog).getByText("I will share a first draft.")).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Save task" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Omar Khalil").length).toBeGreaterThan(0);
+
+    await waitFor(() => {
+      const saved = JSON.parse(window.localStorage.getItem("namaa-demo-workspace-v1") ?? "{}");
+      const task = saved.projects[0].tasks.find(
+        (projectTask: { title: string }) => projectTask.title === "Prepare mobile layouts",
+      );
+      expect(task.description).toBe("Prepare the responsive screen designs.");
+      expect(task.assigneeId).toBe(2);
+      expect(task.dueDate).toBe("2027-05-01");
+      expect(task.comments).toHaveLength(1);
+      expect(task.comments[0].text).toBe("I will share a first draft.");
+    });
+
+    unmount();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /^Tasks/ }));
+    await user.click(screen.getByRole("button", { name: "Edit details: Prepare mobile layouts" }));
+    const restoredDialog = screen.getByRole("dialog", {
+      name: "Task details: Prepare mobile layouts",
+    });
+    expect(within(restoredDialog).getByText("I will share a first draft.")).toBeInTheDocument();
+    expect(within(restoredDialog).getByLabelText("Due date")).toHaveValue("2027-05-01");
+  });
+
+  it("filters tasks by teammate and shows the calendar and local deadline reminders", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /^Tasks/ }));
+
+    expect(screen.getByRole("region", { name: /Overdue: 1/ })).toBeInTheDocument();
+    await user.selectOptions(screen.getByRole("combobox", { name: "Assigned to" }), "1");
+    expect(
+      screen.getByRole("combobox", { name: "Change task status: Prepare mobile layouts" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: "Change task status: Approve homepage direction" }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Calendar" }));
+    expect(document.querySelector(".demo-task-calendar")).toBeInTheDocument();
+    expect(screen.getByText("Prepare mobile layouts")).toBeInTheDocument();
+  });
+
+  it("unassigns tasks when a teammate is removed", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: /^Team/ }));
+    const aminaRow = screen.getByRole("row", { name: /Amina Hassan/ });
+    await user.click(within(aminaRow).getByRole("button", { name: "More actions: Amina Hassan" }));
+    await user.click(screen.getByRole("menuitem", { name: "Remove" }));
+    const confirmation = screen.getByRole("dialog", { name: "Remove teammate?" });
+    await user.click(within(confirmation).getByRole("button", { name: "Remove teammate" }));
+
+    await user.click(screen.getByRole("button", { name: /^Tasks/ }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Assigned to" }), "unassigned");
+    expect(
+      screen.getByRole("combobox", { name: "Change task status: Prepare mobile layouts" }),
+    ).toBeInTheDocument();
+    await waitFor(() => {
+      const saved = JSON.parse(window.localStorage.getItem("namaa-demo-workspace-v1") ?? "{}");
+      expect(saved.projects[0].tasks[2].assigneeId).toBeNull();
+    });
   });
 
   it("switches language, direction, theme, and account settings", async () => {

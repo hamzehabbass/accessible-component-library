@@ -23,6 +23,7 @@ import {
 type Direction = "ltr" | "rtl";
 type Theme = "light" | "dark";
 type Section = "overview" | "team" | "projects" | "tasks" | "settings";
+type TaskView = "board" | "calendar";
 type Member = {
   id: number;
   name: string;
@@ -30,11 +31,20 @@ type Member = {
   role: string;
   status: string;
 };
+type TaskComment = {
+  id: number;
+  text: string;
+  createdAt: string;
+};
 type ProjectTask = {
   id: number;
   title: string;
   completed: boolean;
   status: "todo" | "in-progress" | "done";
+  description: string;
+  assigneeId: number | null;
+  dueDate: string;
+  comments: TaskComment[];
 };
 type Project = {
   id: number;
@@ -57,6 +67,26 @@ type WorkspaceSnapshot = {
 
 const STORAGE_KEY = "namaa-demo-workspace-v1";
 
+function dateOffset(days: number) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function isDateOnly(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return (
+    date.getFullYear() === year &&
+    date.getMonth() === month - 1 &&
+    date.getDate() === day
+  );
+}
+
 const initialMembers: Member[] = [
   { id: 1, name: "Amina Hassan", email: "amina@example.com", role: "Designer", status: "Active" },
   { id: 2, name: "Omar Khalil", email: "omar@example.com", role: "Developer", status: "Active" },
@@ -73,9 +103,9 @@ const initialProjects: Project[] = [
     deadline: "2026-11-18",
     color: "violet",
     tasks: [
-      { id: 1001, title: "Gather customer feedback", completed: true, status: "done" },
-      { id: 1002, title: "Approve homepage direction", completed: false, status: "in-progress" },
-      { id: 1003, title: "Prepare mobile layouts", completed: false, status: "todo" },
+      { id: 1001, title: "Gather customer feedback", completed: true, status: "done", description: "", assigneeId: 3, dueDate: dateOffset(-2), comments: [] },
+      { id: 1002, title: "Approve homepage direction", completed: false, status: "in-progress", description: "", assigneeId: 3, dueDate: dateOffset(2), comments: [] },
+      { id: 1003, title: "Prepare mobile layouts", completed: false, status: "todo", description: "", assigneeId: 1, dueDate: dateOffset(1), comments: [] },
     ],
   },
   {
@@ -85,10 +115,10 @@ const initialProjects: Project[] = [
     deadline: "2026-12-04",
     color: "mint",
     tasks: [
-      { id: 2001, title: "Map the first-run experience", completed: true, status: "done" },
-      { id: 2002, title: "Build the navigation prototype", completed: true, status: "done" },
-      { id: 2003, title: "Review accessibility states", completed: false, status: "in-progress" },
-      { id: 2004, title: "Test with the team", completed: false, status: "todo" },
+      { id: 2001, title: "Map the first-run experience", completed: true, status: "done", description: "", assigneeId: 2, dueDate: "", comments: [] },
+      { id: 2002, title: "Build the navigation prototype", completed: true, status: "done", description: "", assigneeId: 2, dueDate: "", comments: [] },
+      { id: 2003, title: "Review accessibility states", completed: false, status: "in-progress", description: "", assigneeId: 2, dueDate: dateOffset(6), comments: [] },
+      { id: 2004, title: "Test with the team", completed: false, status: "todo", description: "", assigneeId: null, dueDate: "", comments: [] },
     ],
   },
   {
@@ -98,8 +128,8 @@ const initialProjects: Project[] = [
     deadline: "2026-12-15",
     color: "amber",
     tasks: [
-      { id: 3001, title: "Write the launch story", completed: true, status: "done" },
-      { id: 3002, title: "Create campaign assets", completed: false, status: "in-progress" },
+      { id: 3001, title: "Write the launch story", completed: true, status: "done", description: "", assigneeId: 5, dueDate: "", comments: [] },
+      { id: 3002, title: "Create campaign assets", completed: false, status: "in-progress", description: "", assigneeId: 5, dueDate: dateOffset(-1), comments: [] },
     ],
   },
 ];
@@ -138,7 +168,26 @@ function isProjectTask(value: unknown): value is ProjectTask {
     (task.status === undefined ||
       task.status === "todo" ||
       task.status === "in-progress" ||
-      task.status === "done")
+      task.status === "done") &&
+    (task.description === undefined || typeof task.description === "string") &&
+    (task.assigneeId === undefined ||
+      task.assigneeId === null ||
+      (typeof task.assigneeId === "number" && Number.isSafeInteger(task.assigneeId))) &&
+    (task.dueDate === undefined ||
+      (typeof task.dueDate === "string" &&
+        (task.dueDate === "" || isDateOnly(task.dueDate)))) &&
+    (task.comments === undefined ||
+      (Array.isArray(task.comments) &&
+        task.comments.every((comment) => {
+          if (typeof comment !== "object" || comment === null) return false;
+          const item = comment as Record<string, unknown>;
+          return (
+            typeof item.id === "number" &&
+            typeof item.text === "string" &&
+            typeof item.createdAt === "string" &&
+            !Number.isNaN(Date.parse(item.createdAt))
+          );
+        })))
   );
 }
 
@@ -185,23 +234,36 @@ function readWorkspace(): { value: WorkspaceSnapshot; failed: boolean } {
       throw new Error("Saved workspace is invalid.");
     }
 
+    const restoredMembers = Array.isArray(saved.members) ? saved.members.filter(isMember) : [];
+    const restoredProjects = Array.isArray(saved.projects)
+      ? saved.projects.filter(isProject)
+      : initialProjects;
+
     return {
       value: {
-        members: saved.members,
-        projects: (saved.projects ?? initialProjects).map((project) => ({
+        members: restoredMembers,
+        projects: restoredProjects.map((project) => ({
           ...project,
           tasks: project.tasks.map((task) => ({
             ...task,
             status: task.status ?? (task.completed ? "done" : "todo"),
+            description: task.description ?? "",
+            assigneeId:
+              task.assigneeId != null &&
+              restoredMembers.some((member) => member.id === task.assigneeId)
+                ? task.assigneeId
+                : null,
+            dueDate: task.dueDate ?? "",
+            comments: task.comments ?? [],
           })),
         })),
         selectedProjectId:
           typeof saved.selectedProjectId === "number" &&
-          (saved.projects ?? initialProjects).some(
+          restoredProjects.some(
             (project) => project.id === saved.selectedProjectId,
           )
             ? saved.selectedProjectId
-            : (saved.projects ?? initialProjects)[0]?.id ?? null,
+            : restoredProjects[0]?.id ?? null,
         direction: saved.direction,
         theme: saved.theme,
         notifications: saved.notifications,
@@ -282,9 +344,31 @@ const copy = {
     taskInProgressStatus: "In progress",
     taskDoneStatus: "Done",
     changeTaskStatus: "Change task status",
-    dragTaskHelp: "Drag a card to move it. You can also change its status from the menu.",
+    dragTaskHelp: "Drag a card to move it, or use its status menu.",
     allProjects: "All projects",
     taskProject: "Project",
+    taskAssignee: "Assigned to",
+    allMembers: "All teammates",
+    unassigned: "Unassigned",
+    taskDate: "Due date",
+    taskDescription: "Task description",
+    taskDetails: "Task details",
+    editTask: "Edit details",
+    saveTask: "Save task",
+    taskUpdated: "Task details saved.",
+    comments: "Comments",
+    addComment: "Add comment",
+    commentPlaceholder: "Write a comment...",
+    noComments: "No comments yet.",
+    commentAdded: "Comment added.",
+    boardView: "Board",
+    calendarView: "Calendar",
+    deadlineReminders: "Deadline reminders",
+    overdue: "Overdue",
+    dueSoon: "Due in the next 7 days",
+    dueDateLabel: "Due {date}",
+    overdueDateLabel: "Overdue · {date}",
+    noScheduledTasks: "No tasks have due dates yet.",
     emptyTaskColumn: "Nothing here right now.",
     projectWebsite: "Website redesign",
     projectMobile: "Mobile app",
@@ -431,9 +515,31 @@ const copy = {
     taskInProgressStatus: "قيد التنفيذ",
     taskDoneStatus: "مكتملة",
     changeTaskStatus: "تغيير حالة المهمة",
-    dragTaskHelp: "اسحب البطاقة لنقلها، أو غيّر حالتها من القائمة.",
+    dragTaskHelp: "اسحب البطاقة لنقلها، أو استخدم قائمة الحالة.",
     allProjects: "كل المشاريع",
     taskProject: "المشروع",
+    taskAssignee: "المسؤول",
+    allMembers: "كل أعضاء الفريق",
+    unassigned: "غير معيّن",
+    taskDate: "موعد التسليم",
+    taskDescription: "وصف المهمة",
+    taskDetails: "تفاصيل المهمة",
+    editTask: "تعديل التفاصيل",
+    saveTask: "حفظ المهمة",
+    taskUpdated: "تم حفظ تفاصيل المهمة.",
+    comments: "التعليقات",
+    addComment: "إضافة تعليق",
+    commentPlaceholder: "اكتب تعليقًا...",
+    noComments: "لا توجد تعليقات بعد.",
+    commentAdded: "تمت إضافة التعليق.",
+    boardView: "لوحة المهام",
+    calendarView: "التقويم",
+    deadlineReminders: "تذكيرات المواعيد",
+    overdue: "متأخرة",
+    dueSoon: "خلال الأيام السبعة القادمة",
+    dueDateLabel: "موعد التسليم {date}",
+    overdueDateLabel: "متأخرة · {date}",
+    noScheduledTasks: "لا توجد مواعيد محددة للمهام بعد.",
     emptyTaskColumn: "لا توجد مهام هنا حاليًا.",
     projectWebsite: "إعادة تصميم الموقع",
     projectMobile: "تطبيق الهاتف",
@@ -547,6 +653,13 @@ function App() {
   const [projectError, setProjectError] = useState("");
   const [taskDraft, setTaskDraft] = useState("");
   const [taskProjectFilter, setTaskProjectFilter] = useState("all");
+  const [taskAssigneeFilter, setTaskAssigneeFilter] = useState("all");
+  const [taskView, setTaskView] = useState<TaskView>("board");
+  const [editingTask, setEditingTask] = useState<{ projectId: number; taskId: number } | null>(null);
+  const [taskDescriptionDraft, setTaskDescriptionDraft] = useState("");
+  const [taskAssigneeDraft, setTaskAssigneeDraft] = useState("");
+  const [taskDateDraft, setTaskDateDraft] = useState("");
+  const [commentDraft, setCommentDraft] = useState("");
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [page, setPage] = useState(1);
@@ -604,6 +717,12 @@ function App() {
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? projects[0] ?? null;
   const completedProjectTasks = projects.flatMap((project) => project.tasks).filter((task) => task.completed).length;
   const totalProjectTasks = projects.reduce((total, project) => total + project.tasks.length, 0);
+  const today = dateOffset(0);
+  const activeTaskEdit = editingTask
+    ? projects
+        .find((project) => project.id === editingTask.projectId)
+        ?.tasks.find((task) => task.id === editingTask.taskId) ?? null
+    : null;
 
   function displayProjectName(project: Project) {
     if (project.name === "Website redesign") return t.projectWebsite;
@@ -762,7 +881,16 @@ function App() {
               ...project,
               tasks: [
                 ...project.tasks,
-                { id: Date.now(), title: cleanTitle, completed: false, status: "todo" },
+                {
+                  id: Date.now(),
+                  title: cleanTitle,
+                  completed: false,
+                  status: "todo",
+                  description: "",
+                  assigneeId: null,
+                  dueDate: "",
+                  comments: [],
+                },
               ],
             }
           : project,
@@ -835,6 +963,73 @@ function App() {
     });
   }
 
+  function formatTaskDate(value: string) {
+    if (!value) return "";
+    return new Date(`${value}T12:00:00`).toLocaleDateString(direction === "rtl" ? "ar" : "en", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+  }
+
+  function getMemberName(memberId: number | null) {
+    return members.find((member) => member.id === memberId)?.name ?? t.unassigned;
+  }
+
+  function updateTask(taskId: number, update: (task: ProjectTask) => ProjectTask) {
+    setProjects((current) =>
+      current.map((project) => ({
+        ...project,
+        tasks: project.tasks.map((task) => (task.id === taskId ? update(task) : task)),
+      })),
+    );
+  }
+
+  function openTaskDetails(project: Project, task: ProjectTask) {
+    setEditingTask({ projectId: project.id, taskId: task.id });
+    setTaskDescriptionDraft(task.description);
+    setTaskAssigneeDraft(task.assigneeId === null ? "" : String(task.assigneeId));
+    setTaskDateDraft(task.dueDate);
+    setCommentDraft("");
+  }
+
+  function saveTaskDetails(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editingTask) return;
+    const requestedAssigneeId = taskAssigneeDraft ? Number(taskAssigneeDraft) : null;
+    const assigneeId =
+      requestedAssigneeId !== null && members.some((member) => member.id === requestedAssigneeId)
+        ? requestedAssigneeId
+        : null;
+    updateTask(editingTask.taskId, (task) => ({
+      ...task,
+      description: taskDescriptionDraft.trim(),
+      assigneeId,
+      dueDate: taskDateDraft,
+    }));
+    setEditingTask(null);
+    showNotice(t.taskUpdated);
+  }
+
+  function addTaskComment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const text = commentDraft.trim();
+    if (!editingTask || !text) return;
+    updateTask(editingTask.taskId, (task) => ({
+      ...task,
+      comments: [
+        ...task.comments,
+        {
+          id: task.comments.reduce((nextId, comment) => Math.max(nextId, comment.id + 1), Date.now()),
+          text,
+          createdAt: new Date().toISOString(),
+        },
+      ],
+    }));
+    setCommentDraft("");
+    showNotice(t.commentAdded);
+  }
+
   function showNotice(message: string) {
     setNotice(message);
   }
@@ -888,6 +1083,14 @@ function App() {
   function confirmRemoveMember() {
     if (!removingMember) return;
     setMembers((current) => current.filter((member) => member.id !== removingMember.id));
+    setProjects((current) =>
+      current.map((project) => ({
+        ...project,
+        tasks: project.tasks.map((task) =>
+          task.assigneeId === removingMember.id ? { ...task, assigneeId: null } : task,
+        ),
+      })),
+    );
     setRemovingMember(null);
     setPage(1);
     showNotice(t.memberRemoved);
@@ -939,6 +1142,34 @@ function App() {
         taskProjectFilter === "all"
           ? projects
           : projects.filter((project) => String(project.id) === taskProjectFilter);
+      const visibleTasks = visibleProjects.flatMap((project) =>
+        project.tasks
+          .filter(
+            (task) =>
+              taskAssigneeFilter === "all" ||
+              (taskAssigneeFilter === "unassigned"
+                ? task.assigneeId === null
+                : String(task.assigneeId) === taskAssigneeFilter),
+          )
+          .map((task) => ({ project, task })),
+      );
+      const visibleOverdueTasks = visibleTasks.filter(
+        ({ task }) => task.status !== "done" && task.dueDate && task.dueDate < today,
+      );
+      const visibleDueSoonTasks = visibleTasks.filter(
+        ({ task }) =>
+          task.status !== "done" &&
+          task.dueDate >= today &&
+          task.dueDate <= dateOffset(7),
+      );
+      const scheduledTasks = visibleTasks
+        .filter(({ task }) => task.dueDate)
+        .sort((first, second) => first.task.dueDate.localeCompare(second.task.dueDate));
+      const tasksByDate = new Map<string, typeof scheduledTasks>();
+      scheduledTasks.forEach((entry) => {
+        const group = tasksByDate.get(entry.task.dueDate) ?? [];
+        tasksByDate.set(entry.task.dueDate, [...group, entry]);
+      });
 
       return (
         <section className="demo-task-board-page">
@@ -948,9 +1179,26 @@ function App() {
               <h2>{t.taskBoardTitle}</h2>
               <p className="demo-muted">{t.taskBoardCopy}</p>
             </div>
+            <div className="demo-task-view-switch" role="group" aria-label={t.tasks}>
+              <Button
+                variant={taskView === "board" ? "primary" : "secondary"}
+                aria-pressed={taskView === "board"}
+                onClick={() => setTaskView("board")}
+              >
+                {t.boardView}
+              </Button>
+              <Button
+                variant={taskView === "calendar" ? "primary" : "secondary"}
+                aria-pressed={taskView === "calendar"}
+                onClick={() => setTaskView("calendar")}
+              >
+                {t.calendarView}
+              </Button>
+            </div>
+          </div>
+          <div className="demo-task-filters">
             <Select
               aria-label={t.taskProject}
-              className="demo-board-project-filter"
               value={taskProjectFilter}
               onChange={(event) => setTaskProjectFilter(event.target.value)}
             >
@@ -961,70 +1209,152 @@ function App() {
                 </option>
               ))}
             </Select>
+            <Select
+              aria-label={t.taskAssignee}
+              value={taskAssigneeFilter}
+              onChange={(event) => setTaskAssigneeFilter(event.target.value)}
+            >
+              <option value="all">{t.allMembers}</option>
+              <option value="unassigned">{t.unassigned}</option>
+              {members.map((member) => (
+                <option key={member.id} value={String(member.id)}>{member.name}</option>
+              ))}
+            </Select>
           </div>
           <p className="demo-board-help">{t.dragTaskHelp}</p>
-          <div className="demo-task-board">
-            {taskStatuses.map((status) => {
-              const statusTasks = visibleProjects.flatMap((project) =>
-                project.tasks
-                  .filter((task) => task.status === status)
-                  .map((task) => ({ project, task })),
-              );
-              const headingId = `task-column-${status}`;
+          {(visibleOverdueTasks.length > 0 || visibleDueSoonTasks.length > 0) && (
+            <section className="demo-deadline-reminders" aria-labelledby="deadline-reminder-heading">
+              <div>
+                <p className="demo-eyebrow">{t.deadlineReminders}</p>
+                <h3 id="deadline-reminder-heading">
+                  {t.overdue}: {visibleOverdueTasks.length} · {t.dueSoon}: {visibleDueSoonTasks.length}
+                </h3>
+              </div>
+              <ul>
+                {visibleOverdueTasks.slice(0, 3).map(({ project, task }) => (
+                  <li key={task.id}>
+                    <span>{displayTaskTitle(task)} · {displayProjectName(project)}</span>
+                    <strong>{t.overdueDateLabel.replace("{date}", formatTaskDate(task.dueDate))}</strong>
+                  </li>
+                ))}
+                {visibleDueSoonTasks.slice(0, 3).map(({ project, task }) => (
+                  <li key={task.id}>
+                    <span>{displayTaskTitle(task)} · {displayProjectName(project)}</span>
+                    <strong>{t.dueDateLabel.replace("{date}", formatTaskDate(task.dueDate))}</strong>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {taskView === "board" ? (
+            <div className="demo-task-board">
+              {taskStatuses.map((status) => {
+                const statusTasks = visibleTasks.filter(({ task }) => task.status === status);
+                const headingId = `task-column-${status}`;
 
-              return (
-                <section
-                  key={status}
-                  className={`demo-task-column demo-task-column--${status}`}
-                  aria-labelledby={headingId}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={(event) => handleTaskDrop(event, status)}
-                >
-                  <div className="demo-task-column-heading">
-                    <h3 id={headingId}>{statusLabels[status]}</h3>
-                    <span aria-label={t.taskCount.replace("{count}", String(statusTasks.length))}>
-                      {statusTasks.length}
-                    </span>
-                  </div>
-                  {statusTasks.length ? (
-                    <ul className="demo-board-card-list">
-                      {statusTasks.map(({ project, task }) => (
-                        <li key={task.id}>
-                          <article
-                            className="demo-board-task-card"
-                            draggable
-                            onDragStart={(event) => {
-                              event.dataTransfer.setData("text/plain", String(task.id));
-                              event.dataTransfer.effectAllowed = "move";
-                            }}
-                          >
-                            <span className={`demo-board-project-mark demo-board-project-mark--${project.color}`} aria-hidden="true" />
-                            <p>{displayTaskTitle(task)}</p>
-                            <small>{displayProjectName(project)}</small>
-                            <Select
-                              aria-label={`${t.changeTaskStatus}: ${displayTaskTitle(task)}`}
-                              value={task.status}
-                              onChange={(event) => {
-                                if (isTaskStatus(event.target.value)) {
-                                  moveTask(task.id, event.target.value);
-                                }
+                return (
+                  <section
+                    key={status}
+                    className={`demo-task-column demo-task-column--${status}`}
+                    aria-labelledby={headingId}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={(event) => handleTaskDrop(event, status)}
+                  >
+                    <div className="demo-task-column-heading">
+                      <h3 id={headingId}>{statusLabels[status]}</h3>
+                      <span aria-label={t.taskCount.replace("{count}", String(statusTasks.length))}>
+                        {statusTasks.length}
+                      </span>
+                    </div>
+                    {statusTasks.length ? (
+                      <ul className="demo-board-card-list">
+                        {statusTasks.map(({ project, task }) => (
+                          <li key={task.id}>
+                            <article
+                              className="demo-board-task-card"
+                              draggable
+                              onDragStart={(event) => {
+                                event.dataTransfer.setData("text/plain", String(task.id));
+                                event.dataTransfer.effectAllowed = "move";
                               }}
                             >
-                              {taskStatuses.map((option) => (
-                                <option key={option} value={option}>{statusOptions[option]}</option>
-                              ))}
-                            </Select>
-                          </article>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="demo-task-column-empty">{t.emptyTaskColumn}</p>
-                  )}
+                              <span className={`demo-board-project-mark demo-board-project-mark--${project.color}`} aria-hidden="true" />
+                              <p>{displayTaskTitle(task)}</p>
+                              <small>{displayProjectName(project)}</small>
+                              <span className="demo-board-task-meta">
+                                <span>{getMemberName(task.assigneeId)}</span>
+                                {task.dueDate && (
+                                  <time dateTime={task.dueDate}>{formatTaskDate(task.dueDate)}</time>
+                                )}
+                                {task.comments.length > 0 && (
+                                  <span>{task.comments.length} · {t.comments}</span>
+                                )}
+                              </span>
+                              <div className="demo-board-card-actions">
+                                <Select
+                                  aria-label={`${t.changeTaskStatus}: ${displayTaskTitle(task)}`}
+                                  value={task.status}
+                                  onChange={(event) => {
+                                    if (isTaskStatus(event.target.value)) {
+                                      moveTask(task.id, event.target.value);
+                                    }
+                                  }}
+                                >
+                                  {taskStatuses.map((option) => (
+                                    <option key={option} value={option}>{statusOptions[option]}</option>
+                                  ))}
+                                </Select>
+                                <Button
+                                  variant="ghost"
+                                  onClick={() => openTaskDetails(project, task)}
+                                  aria-label={`${t.editTask}: ${displayTaskTitle(task)}`}
+                                >
+                                  {t.editTask}
+                                </Button>
+                              </div>
+                            </article>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="demo-task-column-empty">{t.emptyTaskColumn}</p>
+                    )}
+                  </section>
+                );
+              })}
+            </div>
+          ) : scheduledTasks.length ? (
+            <div className="demo-task-calendar">
+              {[...tasksByDate.entries()].map(([dueDate, entries]) => (
+                <section key={dueDate} className="demo-calendar-day">
+                  <h3><time dateTime={dueDate}>{formatTaskDate(dueDate)}</time></h3>
+                  <ul>
+                    {entries.map(({ project, task }) => (
+                      <li key={task.id}>
+                        <span className={`demo-board-project-mark demo-board-project-mark--${project.color}`} aria-hidden="true" />
+                        <div>
+                          <strong>{displayTaskTitle(task)}</strong>
+                          <small>{displayProjectName(project)} · {getMemberName(task.assigneeId)}</small>
+                          <span className={`demo-calendar-status demo-calendar-status--${task.status}`}>
+                            {statusOptions[task.status]}
+                          </span>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          onClick={() => openTaskDetails(project, task)}
+                          aria-label={`${t.editTask}: ${displayTaskTitle(task)}`}
+                        >
+                          {t.editTask}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
                 </section>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <p className="demo-task-column-empty">{t.noScheduledTasks}</p>
+          )}
         </section>
       );
     }
@@ -1663,6 +1993,77 @@ function App() {
               <Button type="submit">{t.createProject}</Button>
             </div>
           </form>
+        </Modal>
+
+        <Modal
+          open={activeTaskEdit !== null}
+          onClose={() => setEditingTask(null)}
+          title={activeTaskEdit ? `${t.taskDetails}: ${displayTaskTitle(activeTaskEdit)}` : t.taskDetails}
+        >
+          {activeTaskEdit && (
+            <div className="demo-task-details">
+              <form className="demo-invite-form" onSubmit={saveTaskDetails}>
+                <FormField label={t.taskDescription}>
+                  <textarea
+                    className="demo-task-textarea"
+                    value={taskDescriptionDraft}
+                    onChange={(event) => setTaskDescriptionDraft(event.target.value)}
+                    rows={3}
+                  />
+                </FormField>
+                <FormField label={t.taskAssignee}>
+                  <Select
+                    value={taskAssigneeDraft}
+                    onChange={(event) => setTaskAssigneeDraft(event.target.value)}
+                  >
+                    <option value="">{t.unassigned}</option>
+                    {members.map((member) => (
+                      <option key={member.id} value={String(member.id)}>{member.name}</option>
+                    ))}
+                  </Select>
+                </FormField>
+                <FormField label={t.taskDate}>
+                  <Input
+                    type="date"
+                    value={taskDateDraft}
+                    onChange={(event) => setTaskDateDraft(event.target.value)}
+                  />
+                </FormField>
+                <div className="demo-modal-actions">
+                  <Button type="button" variant="secondary" onClick={() => setEditingTask(null)}>
+                    {t.cancel}
+                  </Button>
+                  <Button type="submit">{t.saveTask}</Button>
+                </div>
+              </form>
+              <section className="demo-task-comments" aria-labelledby="task-comments-heading">
+                <h3 id="task-comments-heading">{t.comments}</h3>
+                {activeTaskEdit.comments.length ? (
+                  <ul>
+                    {activeTaskEdit.comments.map((comment) => (
+                      <li key={comment.id}>
+                        <p>{comment.text}</p>
+                        <time dateTime={comment.createdAt}>
+                          {new Date(comment.createdAt).toLocaleString(direction === "rtl" ? "ar" : "en")}
+                        </time>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="demo-muted">{t.noComments}</p>
+                )}
+                <form className="demo-add-comment-form" onSubmit={addTaskComment}>
+                  <Input
+                    aria-label={t.commentPlaceholder}
+                    value={commentDraft}
+                    onChange={(event) => setCommentDraft(event.target.value)}
+                    placeholder={t.commentPlaceholder}
+                  />
+                  <Button type="submit" disabled={!commentDraft.trim()}>{t.addComment}</Button>
+                </form>
+              </section>
+            </div>
+          )}
         </Modal>
 
         {storageFailed && (
