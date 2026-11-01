@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type DragEvent, type FormEvent } from "react";
 import {
   Accordion,
   Button,
@@ -22,7 +22,7 @@ import {
 
 type Direction = "ltr" | "rtl";
 type Theme = "light" | "dark";
-type Section = "overview" | "team" | "projects" | "settings";
+type Section = "overview" | "team" | "projects" | "tasks" | "settings";
 type Member = {
   id: number;
   name: string;
@@ -34,6 +34,7 @@ type ProjectTask = {
   id: number;
   title: string;
   completed: boolean;
+  status: "todo" | "in-progress" | "done";
 };
 type Project = {
   id: number;
@@ -72,9 +73,9 @@ const initialProjects: Project[] = [
     deadline: "2026-11-18",
     color: "violet",
     tasks: [
-      { id: 1001, title: "Gather customer feedback", completed: true },
-      { id: 1002, title: "Approve homepage direction", completed: false },
-      { id: 1003, title: "Prepare mobile layouts", completed: false },
+      { id: 1001, title: "Gather customer feedback", completed: true, status: "done" },
+      { id: 1002, title: "Approve homepage direction", completed: false, status: "in-progress" },
+      { id: 1003, title: "Prepare mobile layouts", completed: false, status: "todo" },
     ],
   },
   {
@@ -84,10 +85,10 @@ const initialProjects: Project[] = [
     deadline: "2026-12-04",
     color: "mint",
     tasks: [
-      { id: 2001, title: "Map the first-run experience", completed: true },
-      { id: 2002, title: "Build the navigation prototype", completed: true },
-      { id: 2003, title: "Review accessibility states", completed: false },
-      { id: 2004, title: "Test with the team", completed: false },
+      { id: 2001, title: "Map the first-run experience", completed: true, status: "done" },
+      { id: 2002, title: "Build the navigation prototype", completed: true, status: "done" },
+      { id: 2003, title: "Review accessibility states", completed: false, status: "in-progress" },
+      { id: 2004, title: "Test with the team", completed: false, status: "todo" },
     ],
   },
   {
@@ -97,8 +98,8 @@ const initialProjects: Project[] = [
     deadline: "2026-12-15",
     color: "amber",
     tasks: [
-      { id: 3001, title: "Write the launch story", completed: true },
-      { id: 3002, title: "Create campaign assets", completed: false },
+      { id: 3001, title: "Write the launch story", completed: true, status: "done" },
+      { id: 3002, title: "Create campaign assets", completed: false, status: "in-progress" },
     ],
   },
 ];
@@ -133,8 +134,16 @@ function isProjectTask(value: unknown): value is ProjectTask {
   return (
     typeof task.id === "number" &&
     typeof task.title === "string" &&
-    typeof task.completed === "boolean"
+    typeof task.completed === "boolean" &&
+    (task.status === undefined ||
+      task.status === "todo" ||
+      task.status === "in-progress" ||
+      task.status === "done")
   );
+}
+
+function isTaskStatus(value: string): value is ProjectTask["status"] {
+  return value === "todo" || value === "in-progress" || value === "done";
 }
 
 function isProject(value: unknown): value is Project {
@@ -179,7 +188,13 @@ function readWorkspace(): { value: WorkspaceSnapshot; failed: boolean } {
     return {
       value: {
         members: saved.members,
-        projects: saved.projects ?? initialProjects,
+        projects: (saved.projects ?? initialProjects).map((project) => ({
+          ...project,
+          tasks: project.tasks.map((task) => ({
+            ...task,
+            status: task.status ?? (task.completed ? "done" : "todo"),
+          })),
+        })),
         selectedProjectId:
           typeof saved.selectedProjectId === "number" &&
           (saved.projects ?? initialProjects).some(
@@ -207,6 +222,7 @@ const copy = {
     overview: "Overview",
     team: "Team",
     projects: "Projects",
+    tasks: "Tasks",
     settings: "Settings",
     help: "Help center",
     title: "Good morning, Hamzeh",
@@ -256,6 +272,20 @@ const copy = {
     markComplete: "Mark complete",
     markIncomplete: "Mark incomplete",
     removeTask: "Remove task",
+    taskBoardTitle: "The work, at a glance",
+    taskBoardCopy: "Move a card as the work moves forward.",
+    taskTodo: "To do",
+    taskInProgress: "In progress",
+    taskDone: "Done",
+    taskCount: "{count} tasks",
+    taskTodoStatus: "To do",
+    taskInProgressStatus: "In progress",
+    taskDoneStatus: "Done",
+    changeTaskStatus: "Change task status",
+    dragTaskHelp: "Drag a card to move it. You can also change its status from the menu.",
+    allProjects: "All projects",
+    taskProject: "Project",
+    emptyTaskColumn: "Nothing here right now.",
     projectWebsite: "Website redesign",
     projectMobile: "Mobile app",
     projectCampaign: "Launch campaign",
@@ -341,6 +371,7 @@ const copy = {
     overview: "نظرة عامة",
     team: "الفريق",
     projects: "المشاريع",
+    tasks: "المهام",
     settings: "الإعدادات",
     help: "مركز المساعدة",
     title: "صباح الخير، حمزة",
@@ -390,6 +421,20 @@ const copy = {
     markComplete: "تحديد كمكتملة",
     markIncomplete: "تحديد كغير مكتملة",
     removeTask: "حذف المهمة",
+    taskBoardTitle: "كل المهام بنظرة واحدة",
+    taskBoardCopy: "انقل المهمة إلى المرحلة التي وصلت إليها.",
+    taskTodo: "المهام الجديدة",
+    taskInProgress: "قيد التنفيذ",
+    taskDone: "مكتملة",
+    taskCount: "{count} مهام",
+    taskTodoStatus: "جديدة",
+    taskInProgressStatus: "قيد التنفيذ",
+    taskDoneStatus: "مكتملة",
+    changeTaskStatus: "تغيير حالة المهمة",
+    dragTaskHelp: "اسحب البطاقة لنقلها، أو غيّر حالتها من القائمة.",
+    allProjects: "كل المشاريع",
+    taskProject: "المشروع",
+    emptyTaskColumn: "لا توجد مهام هنا حاليًا.",
     projectWebsite: "إعادة تصميم الموقع",
     projectMobile: "تطبيق الهاتف",
     projectCampaign: "حملة الإطلاق",
@@ -501,6 +546,7 @@ function App() {
   const [projectDeadline, setProjectDeadline] = useState("");
   const [projectError, setProjectError] = useState("");
   const [taskDraft, setTaskDraft] = useState("");
+  const [taskProjectFilter, setTaskProjectFilter] = useState("all");
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [page, setPage] = useState(1);
@@ -714,7 +760,10 @@ function App() {
         project.id === selectedProject.id
           ? {
               ...project,
-              tasks: [...project.tasks, { id: Date.now(), title: cleanTitle, completed: false }],
+              tasks: [
+                ...project.tasks,
+                { id: Date.now(), title: cleanTitle, completed: false, status: "todo" },
+              ],
             }
           : project,
       ),
@@ -731,12 +780,39 @@ function App() {
           ? {
               ...project,
               tasks: project.tasks.map((task) =>
-                task.id === taskId ? { ...task, completed: !task.completed } : task,
+                task.id === taskId
+                  ? {
+                      ...task,
+                      completed: !task.completed,
+                      status: task.completed ? "todo" : "done",
+                    }
+                  : task,
               ),
             }
           : project,
       ),
     );
+  }
+
+  function moveTask(taskId: number, status: ProjectTask["status"]) {
+    setProjects((current) =>
+      current.map((project) => ({
+        ...project,
+        tasks: project.tasks.map((task) =>
+          task.id === taskId
+            ? { ...task, status, completed: status === "done" }
+            : task,
+        ),
+      })),
+    );
+  }
+
+  function handleTaskDrop(event: DragEvent<HTMLElement>, status: ProjectTask["status"]) {
+    event.preventDefault();
+    const taskId = Number(event.dataTransfer.getData("text/plain"));
+    if (!Number.isSafeInteger(taskId)) return;
+    const exists = projects.some((project) => project.tasks.some((task) => task.id === taskId));
+    if (exists) moveTask(taskId, status);
   }
 
   function removeTask(taskId: number) {
@@ -847,6 +923,112 @@ function App() {
   }
 
   function content() {
+    if (section === "tasks") {
+      const taskStatuses: ProjectTask["status"][] = ["todo", "in-progress", "done"];
+      const statusLabels: Record<ProjectTask["status"], string> = {
+        todo: t.taskTodo,
+        "in-progress": t.taskInProgress,
+        done: t.taskDone,
+      };
+      const statusOptions: Record<ProjectTask["status"], string> = {
+        todo: t.taskTodoStatus,
+        "in-progress": t.taskInProgressStatus,
+        done: t.taskDoneStatus,
+      };
+      const visibleProjects =
+        taskProjectFilter === "all"
+          ? projects
+          : projects.filter((project) => String(project.id) === taskProjectFilter);
+
+      return (
+        <section className="demo-task-board-page">
+          <div className="demo-page-heading">
+            <div>
+              <p className="demo-eyebrow">{t.tasks}</p>
+              <h2>{t.taskBoardTitle}</h2>
+              <p className="demo-muted">{t.taskBoardCopy}</p>
+            </div>
+            <Select
+              aria-label={t.taskProject}
+              className="demo-board-project-filter"
+              value={taskProjectFilter}
+              onChange={(event) => setTaskProjectFilter(event.target.value)}
+            >
+              <option value="all">{t.allProjects}</option>
+              {projects.map((project) => (
+                <option key={project.id} value={String(project.id)}>
+                  {displayProjectName(project)}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <p className="demo-board-help">{t.dragTaskHelp}</p>
+          <div className="demo-task-board">
+            {taskStatuses.map((status) => {
+              const statusTasks = visibleProjects.flatMap((project) =>
+                project.tasks
+                  .filter((task) => task.status === status)
+                  .map((task) => ({ project, task })),
+              );
+              const headingId = `task-column-${status}`;
+
+              return (
+                <section
+                  key={status}
+                  className={`demo-task-column demo-task-column--${status}`}
+                  aria-labelledby={headingId}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => handleTaskDrop(event, status)}
+                >
+                  <div className="demo-task-column-heading">
+                    <h3 id={headingId}>{statusLabels[status]}</h3>
+                    <span aria-label={t.taskCount.replace("{count}", String(statusTasks.length))}>
+                      {statusTasks.length}
+                    </span>
+                  </div>
+                  {statusTasks.length ? (
+                    <ul className="demo-board-card-list">
+                      {statusTasks.map(({ project, task }) => (
+                        <li key={task.id}>
+                          <article
+                            className="demo-board-task-card"
+                            draggable
+                            onDragStart={(event) => {
+                              event.dataTransfer.setData("text/plain", String(task.id));
+                              event.dataTransfer.effectAllowed = "move";
+                            }}
+                          >
+                            <span className={`demo-board-project-mark demo-board-project-mark--${project.color}`} aria-hidden="true" />
+                            <p>{displayTaskTitle(task)}</p>
+                            <small>{displayProjectName(project)}</small>
+                            <Select
+                              aria-label={`${t.changeTaskStatus}: ${displayTaskTitle(task)}`}
+                              value={task.status}
+                              onChange={(event) => {
+                                if (isTaskStatus(event.target.value)) {
+                                  moveTask(task.id, event.target.value);
+                                }
+                              }}
+                            >
+                              {taskStatuses.map((option) => (
+                                <option key={option} value={option}>{statusOptions[option]}</option>
+                              ))}
+                            </Select>
+                          </article>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="demo-task-column-empty">{t.emptyTaskColumn}</p>
+                  )}
+                </section>
+              );
+            })}
+          </div>
+        </section>
+      );
+    }
+
     if (section === "projects") {
       return (
         <section className="demo-projects-page">
@@ -1272,6 +1454,7 @@ function App() {
         ["overview", "◫", t.overview],
         ["team", "◎", t.team],
         ["projects", "✳", t.projects],
+        ["tasks", "▦", t.tasks],
         ["settings", "⚙", t.settings],
       ] as const).map(([id, icon, label]) => (
         <button

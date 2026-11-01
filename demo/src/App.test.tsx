@@ -209,6 +209,74 @@ describe("Namaa demo app", () => {
     expect((await axe(container)).violations).toEqual([]);
   });
 
+  it("moves board tasks with keyboard controls and restores their status", async () => {
+    const user = userEvent.setup();
+    const firstRender = render(<App />);
+
+    await user.click(screen.getByRole("button", { name: /^Tasks/ }));
+    const taskStatus = screen.getByRole("combobox", {
+      name: "Change task status: Prepare mobile layouts",
+    });
+    await user.selectOptions(taskStatus, "in-progress");
+    expect(taskStatus).toHaveValue("in-progress");
+
+    await waitFor(() => {
+      const saved = JSON.parse(window.localStorage.getItem("namaa-demo-workspace-v1") ?? "{}");
+      const task = saved.projects[0].tasks.find(
+        (projectTask: { title: string }) => projectTask.title === "Prepare mobile layouts",
+      );
+      expect(task.status).toBe("in-progress");
+      expect(task.completed).toBe(false);
+    });
+
+    firstRender.unmount();
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /^Tasks/ }));
+    const restoredStatus = screen.getByRole("combobox", {
+      name: "Change task status: Prepare mobile layouts",
+    });
+    expect(restoredStatus).toHaveValue("in-progress");
+
+    await user.selectOptions(restoredStatus, "done");
+    await waitFor(() => {
+      const saved = JSON.parse(window.localStorage.getItem("namaa-demo-workspace-v1") ?? "{}");
+      expect(saved.projects[0].tasks[2].status).toBe("done");
+      expect(saved.projects[0].tasks[2].completed).toBe(true);
+    });
+  });
+
+  it("keeps the task board accessible in Arabic and dark mode", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<App />);
+
+    await user.click(screen.getByRole("button", { name: /^Tasks/ }));
+    await user.click(screen.getByRole("button", { name: "العربية" }));
+    await user.click(screen.getByRole("button", { name: "داكن" }));
+
+    expect(screen.getByRole("heading", { name: "كل المهام بنظرة واحدة" })).toBeInTheDocument();
+    expect((await axe(container)).violations).toEqual([]);
+  });
+
+  it("migrates saved project tasks that predate board statuses", async () => {
+    const user = userEvent.setup();
+    const firstRender = render(<App />);
+    const saved = JSON.parse(window.localStorage.getItem("namaa-demo-workspace-v1") ?? "{}");
+    saved.projects.forEach((project: { tasks: Array<Record<string, unknown>> }) => {
+      project.tasks.forEach((task) => delete task.status);
+    });
+    window.localStorage.setItem("namaa-demo-workspace-v1", JSON.stringify(saved));
+    firstRender.unmount();
+
+    render(<App />);
+    await user.click(screen.getByRole("button", { name: /^Tasks/ }));
+    expect(
+      screen.getByRole("combobox", { name: "Change task status: Gather customer feedback" }),
+    ).toHaveValue("done");
+    expect(
+      screen.getByRole("combobox", { name: "Change task status: Prepare mobile layouts" }),
+    ).toHaveValue("todo");
+  });
+
   it("switches language, direction, theme, and account settings", async () => {
     const user = userEvent.setup();
     render(<App />);
