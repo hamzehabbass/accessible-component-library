@@ -69,14 +69,23 @@ npm run build
 
 The test suite uses Vitest, React Testing Library, and axe. CI runs linting, tests with coverage, the package build, and the Storybook build on pushes and pull requests to `main`.
 
-## Publish and deploy
+## Published project
 
-1. Create the public GitHub repository `hamzehabbass/accessible-component-library` and push this project to its `main` branch.
-2. In GitHub repository settings, enable Pages with **GitHub Actions** as the source.
-3. Add an npm automation token as the repository Actions secret `NPM_TOKEN`.
-4. Create and publish a GitHub Release. The release workflow publishes the package to npm and deploys Storybook to GitHub Pages.
+- **Storybook demo:** [hamzehabbass.github.io/accessible-component-library](https://hamzehabbass.github.io/accessible-component-library/)
+- **npm package:** [hamzehabbass-accessible-ui](https://www.npmjs.com/package/hamzehabbass-accessible-ui) (`0.1.0`)
+- **GitHub repository:** [hamzehabbass/accessible-component-library](https://github.com/hamzehabbass/accessible-component-library)
 
-The npm package name is `hamzehabbass-accessible-ui`; confirm it is available and that your npm account may publish it before the first release. Update the package name and README links if you choose a different name.
+GitHub Actions deploys Storybook to GitHub Pages on every push to `main`. The CI workflow runs lint, tests with axe checks and coverage, the package build, and the Storybook build on pushes and pull requests.
+
+## Publishing a new npm version
+
+The current package is already published. To publish a later version:
+
+1. Configure an npm publishing credential as the GitHub Actions repository secret `NPM_TOKEN`.
+2. Bump the package version with `npm version patch` (or `minor`/`major`), then push the commit and tag.
+3. Publish a GitHub Release for that tag. The release workflow runs lint, tests, and the package build before publishing to npm.
+
+Keep the npm credential private. Prefer npm trusted publishing with GitHub Actions where available; if using a token, grant only the package permissions required to publish.
 
 ## Accessibility notes
 
