@@ -287,7 +287,7 @@ const copy = {
     tasks: "Tasks",
     settings: "Settings",
     help: "Help center",
-    title: "Good morning, Hamzeh",
+    title: "Good morning, Hamza",
     subtitle: "Here’s what’s happening with your team today.",
     invite: "Invite a teammate",
     members: "Team members",
@@ -1528,8 +1528,8 @@ function App() {
                 content: (
                   <div className="demo-settings-content">
                     <div className="demo-profile-row">
-                      <Avatar name="Hamzeh A." className="demo-avatar--large" />
-                      <div><strong>Hamzeh A.</strong><span>hamzeh@example.com</span></div>
+                      <Avatar name="Hamza A." className="demo-avatar--large" />
+                      <div><strong>Hamza A.</strong><span>hamzeh@example.com</span></div>
                       <span className="demo-status is-active"><span aria-hidden="true" />{t.active}</span>
                     </div>
                     <p className="demo-muted">{t.quickCopy}</p>
@@ -1807,8 +1807,8 @@ function App() {
         <span aria-hidden="true">↗</span>
       </div>
       <div className="demo-account">
-        <Avatar name="Hamzeh A." />
-        <span><strong>Hamzeh A.</strong><small>Personal workspace</small></span>
+        <Avatar name="Hamza A." />
+        <span><strong>Hamza A.</strong><small>Personal workspace</small></span>
         <span className="demo-account-dots" aria-hidden="true">···</span>
       </div>
     </>
@@ -1863,7 +1863,7 @@ function App() {
                 </Button>
               </Tooltip>
               <span className="demo-topbar-divider" aria-hidden="true" />
-              <Avatar name="Hamzeh A." />
+              <Avatar name="Hamza A." />
             </div>
           </header>
 

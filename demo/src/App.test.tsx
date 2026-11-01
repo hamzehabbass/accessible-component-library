@@ -31,6 +31,7 @@ describe("Namaa demo app", () => {
   it("has no automated accessibility violations on the dashboard", async () => {
     const user = userEvent.setup();
     const { container } = render(<App />);
+    expect(screen.getByRole("heading", { name: "Good morning, Hamza" })).toBeInTheDocument();
     expect((await axe(container)).violations).toEqual([]);
 
     await user.click(screen.getByRole("button", { name: "العربية" }));
