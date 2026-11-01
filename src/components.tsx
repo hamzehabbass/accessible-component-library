@@ -203,6 +203,11 @@ function DialogSurface({
 }: DialogProps & { drawer?: boolean; placement?: "start" | "end" }) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -223,7 +228,7 @@ function DialogSurface({
     function handleKeyDown(event: globalThis.KeyboardEvent) {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== "Tab") return;
@@ -249,7 +254,7 @@ function DialogSurface({
       dialog.removeEventListener("keydown", handleKeyDown);
       previousFocus?.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
   return (

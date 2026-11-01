@@ -5,7 +5,7 @@
 
 A reusable React and TypeScript component library with keyboard support, accessible semantics, light/dark themes, and Arabic/English layouts.
 
-**Demo:** [Storybook](https://hamzehabbass.github.io/accessible-component-library/) · **Package:** [npm](https://www.npmjs.com/package/hamzehabbass-accessible-ui)
+**Try the demo app:** [Namaa team workspace](https://hamzehabbass.github.io/accessible-component-library/demo/) · **Browse components:** [Storybook](https://hamzehabbass.github.io/accessible-component-library/) · **Package:** [npm](https://www.npmjs.com/package/hamzehabbass-accessible-ui)
 
 ## Components
 
@@ -62,9 +62,11 @@ Requires Node.js 24 and npm.
 npm ci
 npm run dev
 npm run storybook
+npm run dev:demo
 npm test
 npm run lint
 npm run build
+npm run build:demo
 ```
 
 The test suite uses Vitest, React Testing Library, and axe. CI runs linting, tests with coverage, the package build, and the Storybook build on pushes and pull requests to `main`.
@@ -72,10 +74,11 @@ The test suite uses Vitest, React Testing Library, and axe. CI runs linting, tes
 ## Published project
 
 - **Storybook demo:** [hamzehabbass.github.io/accessible-component-library](https://hamzehabbass.github.io/accessible-component-library/)
-- **npm package:** [hamzehabbass-accessible-ui](https://www.npmjs.com/package/hamzehabbass-accessible-ui) (`0.1.0`)
+- **Example application:** [Namaa team workspace](https://hamzehabbass.github.io/accessible-component-library/demo/)
+- **npm package:** [hamzehabbass-accessible-ui](https://www.npmjs.com/package/hamzehabbass-accessible-ui) (`0.1.1`)
 - **GitHub repository:** [hamzehabbass/accessible-component-library](https://github.com/hamzehabbass/accessible-component-library)
 
-GitHub Actions deploys Storybook to GitHub Pages on every push to `main`. The CI workflow runs lint, tests with axe checks and coverage, the package build, and the Storybook build on pushes and pull requests.
+The demo is a frontend-only sample: invite a teammate, search and sort the list, change preferences, and switch between Arabic/RTL and light/dark. Changes update in the browser and are not saved to a server. GitHub Actions deploys the Namaa example application and Storybook to GitHub Pages on every push to `main`. The CI workflow runs lint, tests with axe checks and coverage, the package build, and both site builds on pushes and pull requests.
 
 ## Publishing a new npm version
 

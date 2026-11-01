@@ -74,6 +74,7 @@
 .acl-root[data-theme="dark"] .acl-button--primary,
 .acl-story[data-theme="dark"] .acl-button--primary {
   color: #10182b;
+  background: var(--acl-primary);
 }
 
 .acl-button--primary:hover:not(:disabled) {
